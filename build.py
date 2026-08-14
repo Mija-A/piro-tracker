@@ -4,6 +4,7 @@ Collapsible departments (collapsed by default). Click an order to see its journe
 Run: python3 build.py
 """
 import json, datetime, html, re
+from zoneinfo import ZoneInfo
 
 STALE_DAYS = 0
 SHOW_SUBORDERS = True
@@ -53,7 +54,7 @@ def main():
 
     total=len(rows)
     stuck=sum(1 for o in rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
-    now=datetime.datetime.now().strftime("%b %d, %Y  %I:%M %p")
+    now=datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%b %d, %Y  %I:%M %p")+" ET"
 
     # per-order detail incl. history, for the click panel
     detail={}
