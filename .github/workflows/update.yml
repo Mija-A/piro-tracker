@@ -26,4 +26,5 @@ jobs:
           git config user.email "actions@github.com"
           git add index.html history.json
           git commit -m "Auto-update $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "no changes"
+          git pull --no-rebase --no-edit || true
           git push
