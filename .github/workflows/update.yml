@@ -27,6 +27,7 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add -f index.html history.json
+          git add -f index.html || true
+          git add -f history.json || true
           git commit -m "Auto-update $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "no changes"
           git push origin HEAD:main
