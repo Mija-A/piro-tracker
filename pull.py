@@ -1,11 +1,13 @@
-import json, os, urllib.request, sys
+"""
+pull.py - logs into PIRO, pulls all Processing job orders, saves to orders.json.
+Read-only: one login POST + one GET. Nothing in PIRO is changed.
+Run:  python3 pull.py
+"""
+import json, urllib.request, sys
 
 BASE = "https://sashaprimak.pirofusion.com/PIRO.API/api"
-USER = os.environ.get("PIRO_USER")
-PW   = os.environ.get("PIRO_PW")
-
-if not USER or not PW:
-    sys.exit("Missing PIRO_USER / PIRO_PW environment variables.")
+USER = "apiuser"
+PW   = "GoPiro2025"
 
 def get_token():
     body = json.dumps({"username": USER, "password": PW}).encode()
@@ -26,8 +28,9 @@ def main():
     token = get_token()
     print("Pulling orders...")
     data = pull(token)
+    orders = data.get("value", [])
     json.dump(data, open("orders.json", "w"))
-    print(f"Saved {len(data.get('value', []))} orders to orders.json")
+    print(f"Saved {len(orders)} orders to orders.json")
 
 if __name__ == "__main__":
     main()
