@@ -169,8 +169,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
   <div class="updated">Updated {{NOW}}</div>
 </div>
 <div class="rule"></div>
-<div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number..." oninput="doSearch()"></div>
-<div class="stats">
+<div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter" onkeydown="if(event.key==='Enter')doSearch()"></div><div class="stats">
   <div><div class="slab">In production</div><div class="snum">{{TOTAL}}</div></div>
   <div><div class="slab">Stuck 13+ days</div><div class="snum warn">{{STUCK}}</div></div>
 </div>
