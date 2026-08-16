@@ -1,9 +1,10 @@
 """
 pull.py - logs into PIRO, pulls Processing orders, saves orders.json,
-and appends any stage changes to history.json (the accumulating journey log).
+appends stage changes to history.json, and writes a line to log.txt each run.
 Read-only against PIRO. Run: python3 pull.py
 """
 import json, os, urllib.request, sys, datetime
+from zoneinfo import ZoneInfo
 
 BASE = "https://sashaprimak.pirofusion.com/PIRO.API/api"
 USER = os.environ.get("PIRO_USER")
@@ -25,24 +26,33 @@ def pull(token):
         return json.loads(r.read())
 
 def update_history(orders):
-    """Append stage changes to history.json. Only logs when an order's stage
-    differs from the last recorded stage for that order."""
+    """Append stage changes to history.json. Returns (history, number_moved_this_run)."""
     try:
         hist = json.load(open("history.json"))
     except (FileNotFoundError, json.JSONDecodeError):
         hist = {}
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+    moved = 0
     for o in orders:
         code = o.get("code")
         stage = o.get("currentService")
         if not code or not stage:
             continue
         entries = hist.get(code, [])
-        if not entries or entries[-1]["stage"] != stage:
+        if not entries:
+            hist[code] = [{"stage": stage, "since": now}]
+        elif entries[-1]["stage"] != stage:
             entries.append({"stage": stage, "since": now})
             hist[code] = entries
+            moved += 1   # existing order that changed stage
     json.dump(hist, open("history.json", "w"))
-    return hist
+    return hist, moved
+
+def write_log(n_orders, n_moved, n_tracked):
+    stamp = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M %p ET")
+    line = f"{stamp}  |  pulled {n_orders} orders  |  {n_moved} moved stage  |  tracking {n_tracked}\n"
+    with open("log.txt", "a") as f:
+        f.write(line)
 
 def main():
     print("Logging in...")
@@ -51,8 +61,9 @@ def main():
     data = pull(token)
     orders = data.get("value", [])
     json.dump(data, open("orders.json", "w"))
-    hist = update_history(orders)
-    print(f"Saved {len(orders)} orders; history tracks {len(hist)} orders.")
+    hist, moved = update_history(orders)
+    write_log(len(orders), moved, len(hist))
+    print(f"Saved {len(orders)} orders; {moved} moved stage; history tracks {len(hist)}.")
 
 if __name__ == "__main__":
     main()
