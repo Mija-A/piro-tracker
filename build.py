@@ -2,6 +2,7 @@
 build.py - reads orders.json + history.json, writes index.html.
 Clean serif/sans dashboard: outlined department boxes (grid) -> click opens a
 department's stages/orders -> click an order for image + journey card.
+Defaults to parents-only view (suborders are material sub-tasks; toggle to see them).
 Run: python3 build.py
 """
 import json, datetime, html, re
@@ -51,8 +52,10 @@ def main():
         stage=(o.get("currentService") or "(no stage)").strip()
         grouped.setdefault(dept_of(stage),{}).setdefault(stage,[]).append(o)
 
-    total=len(rows)
-    stuck=sum(1 for o in rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
+    # headline stats reflect PARENTS ONLY (suborders are material sub-tasks / noise)
+    parent_rows_all=[o for o in rows if not is_sub(o.get("code",""))]
+    total=len(parent_rows_all)
+    stuck=sum(1 for o in parent_rows_all if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
     now=datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%b %d, %Y  %I:%M %p")+" ET"
 
     detail={}
@@ -67,8 +70,9 @@ def main():
     for d in DEPT_ORDER:
         if d not in grouped: continue
         drows=[o for st in grouped[d].values() for o in st]
-        dtotal=len(drows)
-        dstuck=sum(1 for o in drows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
+        parent_rows=[o for o in drows if not is_sub(o.get("code",""))]
+        dtotal=len(parent_rows)   # box count = parents only
+        dstuck=sum(1 for o in parent_rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
         did=d.replace(" ","").replace("/","")
         boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum">{dtotal}</div><div class="bsub">{dstuck} stuck</div></button>'
         stages_html=""
@@ -82,13 +86,13 @@ def main():
                 sub=1 if is_sub(o.get("code","")) else 0
                 items+=f'<div class="jo{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')"><span class="code">{c}</span><span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span><span class="days">{dd if dd is not None else ""}d</span></div>'
             stages_html+=f'<div class="stage"><div class="stage-h"><span>{html.escape(stage)}</span><span class="stage-n">{len(olist)}</span></div>{items}</div>'
-        panels_html+=f'<div class="deptpanel" id="dept-{did}"><button class="back" onclick="closeDept()">&#8592; All departments</button><div class="dp-h"><span class="dp-name">{html.escape(d)}</span><span class="dp-n">{dtotal}</span></div><div class="controls"><div class="seg"><button class="on" data-f="all" onclick="setFilter(this,event)">All</button><button data-f="parent" onclick="setFilter(this,event)">Parents</button><button data-f="sub" onclick="setFilter(this,event)">Suborders</button></div></div>{stages_html}</div>'
+        panels_html+=f'<div class="deptpanel" id="dept-{did}"><button class="back" onclick="closeDept()">&#8592; All departments</button><div class="dp-h"><span class="dp-name">{html.escape(d)}</span><span class="dp-n">{dtotal}</span></div><div class="controls"><div class="seg"><button data-f="all" onclick="setFilter(this,event)">All</button><button class="on" data-f="parent" onclick="setFilter(this,event)">Parents</button><button data-f="sub" onclick="setFilter(this,event)">Suborders</button></div></div>{stages_html}</div>'
 
     page=PAGE.replace("{{BOXES}}",boxes_html).replace("{{PANELS}}",panels_html).replace("{{NOW}}",now)\
              .replace("{{TOTAL}}",str(total)).replace("{{STUCK}}",str(stuck))\
              .replace("{{DETAIL}}",json.dumps(detail))
     open("index.html","w").write(page)
-    print(f"Built index.html ({total} orders, history on {len(history)} orders)")
+    print(f"Built index.html ({total} parent orders shown, history on {len(history)} orders)")
 
 PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -179,27 +183,14 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="overlay" id="ov" onclick="if(event.target===this)closeCard()"><div class="panel" id="panel"></div></div>
 <script>
 const DETAIL={{DETAIL}};
-let FILTER="all";
+let FILTER="parent";
 function fmtET(utc){
   try{
     const d=new Date(utc.replace(' ','T')+':00Z');
     return d.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET';
   }catch(e){return utc+' UTC';}
 }
-function openDept(id){
-  document.getElementById('boxesWrap').style.display='none';
-  document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
-  document.getElementById('dept-'+id).classList.add('open');
-  FILTER="all"; window.scrollTo(0,0);
-}
-function closeDept(){
-  document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
-  document.getElementById('boxesWrap').style.display='';
-}
-function setFilter(btn,e){
-  const panel=btn.closest('.deptpanel');
-  panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on'); FILTER=btn.dataset.f;
+function applyFilterToPanel(panel){
   panel.querySelectorAll('.jo').forEach(jo=>{
     const isSub=jo.dataset.sub==="1";
     let show=(FILTER==="all")||(FILTER==="parent"&&!isSub)||(FILTER==="sub"&&isSub);
@@ -210,6 +201,32 @@ function setFilter(btn,e){
     st.querySelector('.stage-n').textContent=vis;
     st.style.display=vis?"":"none";
   });
+}
+function openDept(id){
+  document.getElementById('boxesWrap').style.display='none';
+  document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
+  const panel=document.getElementById('dept-'+id);
+  panel.classList.add('open');
+  FILTER="parent";
+  panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
+  panel.querySelector('.seg button[data-f="parent"]').classList.add('on');
+  applyFilterToPanel(panel);
+  window.scrollTo(0,0);
+  history.pushState({view:'dept'},'');
+}
+function closeDept(){
+  if(history.state&&history.state.view==='dept'){history.back();return;}
+  showBoxes();
+}
+function showBoxes(){
+  document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
+  document.getElementById('boxesWrap').style.display='';
+}
+function setFilter(btn,e){
+  const panel=btn.closest('.deptpanel');
+  panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on'); FILTER=btn.dataset.f;
+  applyFilterToPanel(panel);
 }
 function showCard(code){
   const d=DETAIL[code];if(!d)return;
@@ -231,6 +248,10 @@ function showCard(code){
   document.getElementById('ov').classList.add('open');
 }
 function closeCard(){document.getElementById('ov').classList.remove('open');}
+window.addEventListener('popstate',function(){
+  document.getElementById('ov').classList.remove('open');
+  showBoxes();
+});
 function doSearch(){
   const q=document.getElementById('q').value.trim().toLowerCase();if(!q)return;
   const hit=Object.keys(DETAIL).find(c=>c.toLowerCase()===q)||Object.keys(DETAIL).find(c=>c.toLowerCase().includes(q));
