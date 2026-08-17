@@ -74,7 +74,7 @@ def main():
         dtotal=len(parent_rows)   # box count = parents only
         dstuck=sum(1 for o in parent_rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
         did=d.replace(" ","").replace("/","")
-        boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum">{dtotal}</div><div class="bsub">{dstuck} stuck</div></button>'
+        boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum" data-key="box-{did}">{dtotal}</div><div class="bsub" data-key="boxstuck-{did}">{dstuck} stuck</div></button>'
         stages_html=""
         for stage in sorted(grouped[d], key=lambda s:-len(grouped[d][s])):
             olist=sorted(grouped[d][stage], key=lambda x:-(x.get("daysInCurrentService") or 0))
@@ -85,7 +85,7 @@ def main():
                 c=html.escape(o.get("code",""))
                 sub=1 if is_sub(o.get("code","")) else 0
                 items+=f'<div class="jo{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')"><span class="code">{c}</span><span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span><span class="days">{dd if dd is not None else ""}d</span></div>'
-            stages_html+=f'<div class="stage"><div class="stage-h"><span>{html.escape(stage)}</span><span class="stage-n">{len(olist)}</span></div>{items}</div>'
+            stages_html+=f'<div class="stage"><div class="stage-h" onclick="toggleStage(this)"><span class="chev">&#9656;</span><span class="stage-name">{html.escape(stage)}</span><span class="stage-n">{len(olist)}</span></div><div class="stage-items collapsed">{items}</div></div>'
         panels_html+=f'<div class="deptpanel" id="dept-{did}"><button class="back" onclick="closeDept()">&#8592; All departments</button><div class="dp-h"><span class="dp-name">{html.escape(d)}</span><span class="dp-n">{dtotal}</span></div><div class="controls"><div class="seg"><button data-f="all" onclick="setFilter(this,event)">All</button><button class="on" data-f="parent" onclick="setFilter(this,event)">Parents</button><button data-f="sub" onclick="setFilter(this,event)">Suborders</button></div></div>{stages_html}</div>'
 
     page=PAGE.replace("{{BOXES}}",boxes_html).replace("{{PANELS}}",panels_html).replace("{{NOW}}",now)\
@@ -116,14 +116,14 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .search .ico{position:absolute;left:13px;top:11px;color:var(--ink3);}
 .stats{display:flex;gap:46px;margin-bottom:30px;}
 .slab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);margin-bottom:5px;}
-.snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;}
+.snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;display:inline-block;padding:0 4px;border-radius:5px;}
 .snum.warn{color:#8a5a30;}
 .boxes{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;max-width:940px;}
 .box{border:1px solid var(--line2);border-radius:7px;padding:22px 24px 20px;cursor:pointer;font-family:var(--sans);text-align:left;background:var(--card);aspect-ratio:1.95/1;display:flex;flex-direction:column;transition:border-color .13s,background .13s;}
 .box:hover{border-color:var(--ink);}
 .bname{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:.01em;margin-bottom:auto;color:var(--ink);}
-.bnum{font-size:33px;font-weight:600;letter-spacing:-.02em;line-height:1;}
-.bsub{font-size:12px;color:var(--ink2);margin-top:6px;}
+.bnum{font-size:33px;font-weight:600;letter-spacing:-.02em;line-height:1;display:inline-block;padding:0 4px;border-radius:5px;}
+.bsub{font-size:12px;color:var(--ink2);margin-top:6px;display:inline-block;padding:0 4px;border-radius:5px;}
 .deptpanel{display:none;max-width:940px;}
 .deptpanel.open{display:block;}
 .back{background:none;border:none;font-family:var(--sans);font-size:12.5px;color:var(--ink2);cursor:pointer;padding:6px 0;margin-bottom:16px;}
@@ -137,8 +137,14 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .seg button:last-child{border-right:none;}
 .seg button.on{background:var(--ink);color:#fff;}
 .stage{margin-top:22px;}
-.stage-h{display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--line);}
+.stage-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;}
+.stage-h:hover{color:var(--ink);}
+.chev{display:inline-block;font-size:9px;color:var(--ink3);transition:transform .15s ease;flex-shrink:0;}
+.stage-h.open .chev{transform:rotate(90deg);}
+.stage-name{flex:1;}
 .stage-n{color:var(--ink3);}
+.stage-items{overflow:hidden;}
+.stage-items.collapsed{display:none;}
 .jo{display:flex;align-items:baseline;gap:12px;font-size:13.5px;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer;}
 .jo:hover{background:var(--card);}
 .jo .code{font-family:var(--mono);font-size:12px;min-width:150px;}
@@ -167,6 +173,12 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pclose{margin-top:22px;font-size:12.5px;color:var(--ink2);cursor:pointer;text-align:right;}
 .pclose:hover{color:var(--ink);}
 .jnote{font-size:12px;color:var(--ink3);margin-top:8px;line-height:1.5;}
+@keyframes flashHighlight{
+  0%{background:rgba(138,90,48,.32);}
+  70%{background:rgba(138,90,48,.32);}
+  100%{background:transparent;}
+}
+.flash{animation:flashHighlight 2.4s ease-out;}
 </style></head><body>
 <div class="top">
   <div class="title">Production Tracker</div>
@@ -175,8 +187,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="rule"></div>
 <div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter" onkeydown="if(event.key==='Enter')doSearch()"></div>
 <div class="stats">
-  <div><div class="slab">In production</div><div class="snum">{{TOTAL}}</div></div>
-  <div><div class="slab">Stuck 13+ days</div><div class="snum warn">{{STUCK}}</div></div>
+  <div><div class="slab">In production</div><div class="snum" data-key="total">{{TOTAL}}</div></div>
+  <div><div class="slab">Stuck 13+ days</div><div class="snum warn" data-key="stuck">{{STUCK}}</div></div>
 </div>
 <div id="boxesWrap"><div class="boxes">{{BOXES}}</div></div>
 {{PANELS}}
@@ -202,6 +214,16 @@ function applyFilterToPanel(panel){
     st.style.display=vis?"":"none";
   });
 }
+function toggleStage(h){
+  h.classList.toggle('open');
+  h.nextElementSibling.classList.toggle('collapsed');
+}
+function resetStages(panel){
+  panel.querySelectorAll('.stage-h').forEach(h=>{
+    h.classList.remove('open');
+    h.nextElementSibling.classList.add('collapsed');
+  });
+}
 function openDept(id){
   document.getElementById('boxesWrap').style.display='none';
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
@@ -211,6 +233,7 @@ function openDept(id){
   panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
   panel.querySelector('.seg button[data-f="parent"]').classList.add('on');
   applyFilterToPanel(panel);
+  resetStages(panel);
   window.scrollTo(0,0);
   history.pushState({view:'dept'},'');
 }
@@ -257,6 +280,19 @@ function doSearch(){
   const hit=Object.keys(DETAIL).find(c=>c.toLowerCase()===q)||Object.keys(DETAIL).find(c=>c.toLowerCase().includes(q));
   if(hit)showCard(hit);
 }
+function flashChanged(){
+  document.querySelectorAll('[data-key]').forEach(el=>{
+    const key='pt_'+el.dataset.key;
+    const cur=el.textContent.trim();
+    const prev=window.localStorage.getItem(key);
+    if(prev!==null && prev!==cur){
+      el.classList.add('flash');
+      setTimeout(()=>el.classList.remove('flash'),2500);
+    }
+    window.localStorage.setItem(key,cur);
+  });
+}
+document.addEventListener('DOMContentLoaded',flashChanged);
 </script></body></html>"""
 
 if __name__=="__main__":
