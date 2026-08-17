@@ -169,7 +169,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
   <div class="updated">Updated {{NOW}}</div>
 </div>
 <div class="rule"></div>
-<div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter" onkeydown="if(event.key==='Enter')doSearch()"></div><div class="stats">
+<div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter" onkeydown="if(event.key==='Enter')doSearch()"></div>
+<div class="stats">
   <div><div class="slab">In production</div><div class="snum">{{TOTAL}}</div></div>
   <div><div class="slab">Stuck 13+ days</div><div class="snum warn">{{STUCK}}</div></div>
 </div>
@@ -179,6 +180,12 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <script>
 const DETAIL={{DETAIL}};
 let FILTER="all";
+function fmtET(utc){
+  try{
+    const d=new Date(utc.replace(' ','T')+':00Z');
+    return d.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET';
+  }catch(e){return utc+' UTC';}
+}
 function openDept(id){
   document.getElementById('boxesWrap').style.display='none';
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
@@ -209,7 +216,7 @@ function showCard(code){
   let j='';
   if(d.journey&&d.journey.length){
     d.journey.forEach((s,i)=>{const cur=i===d.journey.length-1?' cur':'';
-      j+='<div class="jrow'+cur+'"><div class="jdot"></div><div><div class="jstage">'+s.stage+'</div><div class="jsince">since '+s.since+' UTC</div></div></div>';});
+      j+='<div class="jrow'+cur+'"><div class="jdot"></div><div><div class="jstage">'+s.stage+'</div><div class="jsince">since '+fmtET(s.since)+'</div></div></div>';});
   }else{j='<div class="jrow cur"><div class="jdot"></div><div><div class="jstage">'+(d.stage||'')+'</div><div class="jsince">current</div></div></div>';}
   const note=(!d.journey||d.journey.length<2)?'<div class="jnote">Journey builds as this order moves through stages.</div>':'';
   const img=d.img?'<img class="pimg" src="'+d.img+'" loading="lazy" onerror="this.style.display=\'none\'">':'';
