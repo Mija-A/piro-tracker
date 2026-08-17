@@ -3,7 +3,7 @@ build.py - reads orders.json + history.json, writes index.html.
 Clean serif/sans dashboard: outlined department boxes (grid) -> click opens a
 department's stages/orders -> click an order for image + journey card.
 Defaults to parents-only view (suborders are material sub-tasks; toggle to see them).
-Run: python3 build.py
+Auto-reloads the page every 10 minutes (cache-busted). Run: python3 build.py
 """
 import json, datetime, html, re
 from zoneinfo import ZoneInfo
@@ -52,7 +52,6 @@ def main():
         stage=(o.get("currentService") or "(no stage)").strip()
         grouped.setdefault(dept_of(stage),{}).setdefault(stage,[]).append(o)
 
-    # headline stats reflect PARENTS ONLY (suborders are material sub-tasks / noise)
     parent_rows_all=[o for o in rows if not is_sub(o.get("code",""))]
     total=len(parent_rows_all)
     stuck=sum(1 for o in parent_rows_all if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
@@ -71,10 +70,10 @@ def main():
         if d not in grouped: continue
         drows=[o for st in grouped[d].values() for o in st]
         parent_rows=[o for o in drows if not is_sub(o.get("code",""))]
-        dtotal=len(parent_rows)   # box count = parents only
+        dtotal=len(parent_rows)
         dstuck=sum(1 for o in parent_rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
         did=d.replace(" ","").replace("/","")
-        boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum" data-key="box-{did}">{dtotal}</div><div class="bsub" data-key="boxstuck-{did}">{dstuck} stuck</div></button>'
+        boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum">{dtotal}</div><div class="bsub">{dstuck} stuck</div></button>'
         stages_html=""
         for stage in sorted(grouped[d], key=lambda s:-len(grouped[d][s])):
             olist=sorted(grouped[d][stage], key=lambda x:-(x.get("daysInCurrentService") or 0))
@@ -97,7 +96,9 @@ def main():
 PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Production Tracker</title>
-<meta http-equiv="refresh" content="600">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -116,14 +117,14 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .search .ico{position:absolute;left:13px;top:11px;color:var(--ink3);}
 .stats{display:flex;gap:46px;margin-bottom:30px;}
 .slab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);margin-bottom:5px;}
-.snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;display:inline-block;padding:0 4px;border-radius:5px;}
+.snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;}
 .snum.warn{color:#8a5a30;}
 .boxes{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;max-width:940px;}
 .box{border:1px solid var(--line2);border-radius:7px;padding:22px 24px 20px;cursor:pointer;font-family:var(--sans);text-align:left;background:var(--card);aspect-ratio:1.95/1;display:flex;flex-direction:column;transition:border-color .13s,background .13s;}
 .box:hover{border-color:var(--ink);}
 .bname{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:.01em;margin-bottom:auto;color:var(--ink);}
-.bnum{font-size:33px;font-weight:600;letter-spacing:-.02em;line-height:1;display:inline-block;padding:0 4px;border-radius:5px;}
-.bsub{font-size:12px;color:var(--ink2);margin-top:6px;display:inline-block;padding:0 4px;border-radius:5px;}
+.bnum{font-size:33px;font-weight:600;letter-spacing:-.02em;line-height:1;}
+.bsub{font-size:12px;color:var(--ink2);margin-top:6px;}
 .deptpanel{display:none;max-width:940px;}
 .deptpanel.open{display:block;}
 .back{background:none;border:none;font-family:var(--sans);font-size:12.5px;color:var(--ink2);cursor:pointer;padding:6px 0;margin-bottom:16px;}
@@ -173,12 +174,6 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pclose{margin-top:22px;font-size:12.5px;color:var(--ink2);cursor:pointer;text-align:right;}
 .pclose:hover{color:var(--ink);}
 .jnote{font-size:12px;color:var(--ink3);margin-top:8px;line-height:1.5;}
-@keyframes flashHighlight{
-  0%{background:rgba(138,90,48,.32);}
-  70%{background:rgba(138,90,48,.32);}
-  100%{background:transparent;}
-}
-.flash{animation:flashHighlight 2.4s ease-out;}
 </style></head><body>
 <div class="top">
   <div class="title">Production Tracker</div>
@@ -187,8 +182,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="rule"></div>
 <div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter" onkeydown="if(event.key==='Enter')doSearch()"></div>
 <div class="stats">
-  <div><div class="slab">In production</div><div class="snum" data-key="total">{{TOTAL}}</div></div>
-  <div><div class="slab">Stuck 13+ days</div><div class="snum warn" data-key="stuck">{{STUCK}}</div></div>
+  <div><div class="slab">In production</div><div class="snum">{{TOTAL}}</div></div>
+  <div><div class="slab">Stuck 13+ days</div><div class="snum warn">{{STUCK}}</div></div>
 </div>
 <div id="boxesWrap"><div class="boxes">{{BOXES}}</div></div>
 {{PANELS}}
@@ -196,6 +191,11 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <script>
 const DETAIL={{DETAIL}};
 let FILTER="parent";
+// Auto-reload every 10 minutes, cache-busted so it always fetches fresh data.
+setTimeout(function(){
+  var u=location.pathname+'?t='+Date.now();
+  location.replace(u);
+}, 600000);
 function fmtET(utc){
   try{
     const d=new Date(utc.replace(' ','T')+':00Z');
@@ -280,19 +280,6 @@ function doSearch(){
   const hit=Object.keys(DETAIL).find(c=>c.toLowerCase()===q)||Object.keys(DETAIL).find(c=>c.toLowerCase().includes(q));
   if(hit)showCard(hit);
 }
-function flashChanged(){
-  document.querySelectorAll('[data-key]').forEach(el=>{
-    const key='pt_'+el.dataset.key;
-    const cur=el.textContent.trim();
-    const prev=window.localStorage.getItem(key);
-    if(prev!==null && prev!==cur){
-      el.classList.add('flash');
-      setTimeout(()=>el.classList.remove('flash'),2500);
-    }
-    window.localStorage.setItem(key,cur);
-  });
-}
-document.addEventListener('DOMContentLoaded',flashChanged);
 </script></body></html>"""
 
 if __name__=="__main__":
