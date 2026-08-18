@@ -341,7 +341,10 @@ def render_stage_by_metal(stage, olist):
 PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Production Tracker</title>
-<meta http-equiv="refresh" content="3600">
+<meta http-equiv="refresh" content="300">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -521,6 +524,20 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="overlay" id="ovr" onclick="if(event.target===this)closeReport()"><div class="rpanel" id="rpanel"></div></div>
 <script>
 const DETAIL={{DETAIL}};
+// Auto-reload every 5 minutes with a cache-busting query string so the browser
+// fetches a fresh copy instead of serving the cached page (no manual Cmd+Shift+R).
+(function(){
+  var RELOAD_MS=5*60*1000;
+  setTimeout(function(){
+    try{
+      var u=new URL(window.location.href);
+      u.searchParams.set('v', Date.now());
+      window.location.replace(u.toString());
+    }catch(e){
+      window.location.reload();
+    }
+  }, RELOAD_MS);
+})();
 function fmtET(utc){
   try{
     const d=new Date(utc.replace(' ','T')+':00Z');
