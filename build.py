@@ -33,6 +33,10 @@ DEPT_ORDER = ["CAD","Printing / Casting","Stones","Shop","Customer Service","Oth
 # Departments that use the metal-grouped, DUE-column row treatment (Step 1)
 METAL_GROUPED_DEPTS = {"Printing / Casting"}
 
+# Services (by stage name) that group JOs by assigned worker, then due date (Step 2).
+# These take priority over metal grouping for their specific stage.
+PERSON_GROUPED_SERVICES = {"Stone Setting", "Jewelry Cleaning", "CADing"}
+
 # metal keyword -> (background, text) . Matched case-insensitively by "contains".
 # Order matters: more specific keys (18k white) before generic ones would collide,
 # but our tokens are already distinct, so simple contains-matching is fine.
@@ -174,7 +178,9 @@ def main():
         stages_html=""
         for stage in sorted(grouped[d], key=lambda s:-len(grouped[d][s])):
             olist=grouped[d][stage]
-            if metal_mode:
+            if stage in PERSON_GROUPED_SERVICES:
+                stages_html+=render_stage_by_person(stage, olist)
+            elif metal_mode:
                 stages_html+=render_stage_by_metal(stage, olist)
             else:
                 stages_html+=render_stage_flat(stage, olist)
@@ -226,6 +232,80 @@ def render_stage_flat(stage, olist):
             f'<span class="stage-name">{html.escape(stage)}</span>'
             f'<span class="stage-n">{len(olist)}</span></div>'
             f'<div class="stage-body">{items}</div></div>')
+
+def person_key(o):
+    """Assigned worker name; blank -> 'Unassigned'."""
+    n=(o.get("serviceAssignedUser") or "").strip()
+    return n if n else "Unassigned"
+
+def jo_row_person(o):
+    dd=o.get("daysInCurrentService")
+    sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
+    c=html.escape(o.get("code",""))
+    sub=1 if is_sub(o.get("code","")) else 0
+    due=fmt_due(o.get(DUE_FIELD))
+    who=html.escape(person_key(o))
+    dv=o.get(DUE_FIELD) or ""
+    m=re.match(r"(\d{4}-\d{2}-\d{2})", str(dv))
+    diso=m.group(1) if m else ""
+    return (f'<div class="jo jom{sc}" data-sub="{sub}" data-person="{who}" '
+            f'data-due="{diso}" onclick="showCard(\'{c}\')">'
+            f'<span class="code">{c}</span>'
+            f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
+            f'<span class="metalcell">{metal_pill_html(o.get("metals") or "")}</span>'
+            f'<span class="duecell">{due}</span>'
+            f'<span class="days">{dd if dd is not None else ""}d</span></div>')
+
+def render_stage_by_person(stage, olist):
+    # bucket by assigned worker
+    buckets={}
+    for o in olist:
+        buckets.setdefault(person_key(o), []).append(o)
+    # person order: alphabetical, Unassigned always last
+    def psort(name): return (1,"") if name=="Unassigned" else (0,name.lower())
+    people=sorted(buckets, key=psort)
+
+    sid=re.sub(r'[^A-Za-z0-9]','',stage)  # stable id for this stage's controls
+
+    # employee dropdown options
+    opts='<option value="__all__">All employees</option>'
+    for name in people:
+        opts+=f'<option value="{html.escape(name)}">{html.escape(name)} ({len(buckets[name])})</option>'
+
+    controls=(f'<div class="pfilters">'
+              f'<label class="pf">Employee '
+              f'<select onchange="filterPerson(this)">{opts}</select></label>'
+              f'<label class="pf">Due '
+              f'<select onchange="filterDue(this)">'
+              f'<option value="__all__">Any date</option>'
+              f'<option value="overdue">Overdue</option>'
+              f'<option value="7">Next 7 days</option>'
+              f'<option value="14">Next 14 days</option>'
+              f'</select></label></div>')
+
+    inner=controls
+    for name in people:
+        gitems=sorted(buckets[name], key=due_sort_key)
+        colhead=('<div class="jo jom colhead">'
+                 '<span class="code">JO</span>'
+                 '<span class="cust">Customer</span>'
+                 '<span class="metalcell">Metal</span>'
+                 '<span class="duecell">Due</span>'
+                 '<span class="days">Days</span></div>')
+        rows="".join(jo_row_person(o) for o in gitems)
+        inner+=(f'<div class="pgroup collapsed" data-person="{html.escape(name)}">'
+                f'<div class="pgroup-h" onclick="togglePerson(this)">'
+                f'<span class="pgroup-caret">&#9656;</span>'
+                f'<span class="pgroup-name">{html.escape(name)}</span>'
+                f'<span class="pgroup-n">{len(gitems)}</span></div>'
+                f'<div class="pgroup-body">{colhead}{rows}</div></div>')
+
+    return (f'<div class="stage collapsed personmode" data-sid="{sid}">'
+            f'<div class="stage-h" onclick="toggleStage(this)">'
+            f'<span class="stage-caret">&#9656;</span>'
+            f'<span class="stage-name">{html.escape(stage)}</span>'
+            f'<span class="stage-n">{len(olist)}</span></div>'
+            f'<div class="stage-body">{inner}</div></div>')
 
 def render_stage_by_metal(stage, olist):
     # bucket by combined metal string
@@ -323,6 +403,21 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .jo.colhead{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);cursor:default;border-bottom:1px solid var(--line2);padding-bottom:8px;}
 .jo.colhead:hover{background:transparent;}
 .jo.colhead .code,.jo.colhead .cust,.jo.colhead .metalcell,.jo.colhead .duecell,.jo.colhead .days{color:var(--ink3);font-family:var(--sans);font-size:10px;}
+/* person-grouped services (Step 2) */
+.pfilters{display:flex;gap:16px;flex-wrap:wrap;padding:6px 2px 12px;}
+.pf{display:flex;align-items:center;gap:7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink3);font-weight:600;}
+.pf select{font-family:var(--sans);font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:6px;padding:6px 10px;cursor:pointer;outline:none;}
+.pf select:focus{border-color:var(--ink);}
+.pgroup{margin:2px 0 6px;padding:0 2px;}
+.pgroup-h{display:flex;align-items:center;gap:9px;padding:11px 2px;border-bottom:1px solid var(--line2);cursor:pointer;user-select:none;}
+.pgroup-h:hover .pgroup-name{color:#000;}
+.pgroup-caret{font-size:9px;color:var(--ink3);transition:transform .14s;display:inline-block;}
+.pgroup.collapsed .pgroup-caret{transform:rotate(0deg);}
+.pgroup:not(.collapsed) .pgroup-caret{transform:rotate(90deg);}
+.pgroup-name{font-size:13px;font-weight:600;color:var(--ink);font-family:var(--serif);letter-spacing:.01em;}
+.pgroup-n{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--ink3);font-variant-numeric:tabular-nums;}
+.pgroup-body{padding:2px 0 8px;}
+.pgroup.collapsed .pgroup-body{display:none;}
 .jo.jom .code{min-width:120px;}
 .jo.jom .cust{flex:1;min-width:0;}
 .metalcell{flex-shrink:0;min-width:150px;}
@@ -377,7 +472,10 @@ function fmtET(utc){
   }catch(e){return utc+' UTC';}
 }
 function applyFilterToPanel(panel){
-  panel.querySelectorAll('.jo:not(.colhead)').forEach(jo=>{
+  // person-grouped stages handle their own row visibility (person + due + parent/sub)
+  panel.querySelectorAll('.stage.personmode').forEach(st=>applyPersonFilters(st));
+  // everything else: plain parent/sub visibility
+  panel.querySelectorAll('.stage:not(.personmode) .jo:not(.colhead)').forEach(jo=>{
     const isSub=jo.dataset.sub==="1";
     let show=(FILTER==="all")||(FILTER==="parent"&&!isSub)||(FILTER==="sub"&&isSub);
     jo.style.display=show?"":"none";
@@ -388,11 +486,10 @@ function applyFilterToPanel(panel){
     const n=g.querySelector('.mgroup-n'); if(n)n.textContent=vis;
     g.style.display=vis?"":"none";
   });
-  panel.querySelectorAll('.stage').forEach(st=>{
+  panel.querySelectorAll('.stage:not(.personmode)').forEach(st=>{
     const vis=[...st.querySelectorAll('.jo:not(.colhead)')].filter(j=>j.style.display!=="none").length;
     st.querySelector('.stage-n').textContent=vis;
     st.style.display=vis?"":"none";
-    // hide the column header if the stage has no visible rows
     const ch=st.querySelector('.colhead'); if(ch)ch.style.display=vis?"":"none";
   });
 }
@@ -402,6 +499,7 @@ function openDept(id){
   const panel=document.getElementById('dept-'+id);
   panel.classList.add('open');
   panel.querySelectorAll('.stage').forEach(s=>s.classList.add('collapsed'));
+  panel.querySelectorAll('.pgroup').forEach(g=>g.classList.add('collapsed'));
   FILTER="parent";
   panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
   panel.querySelector('.seg button[data-f="parent"]').classList.add('on');
@@ -419,6 +517,54 @@ function showBoxes(){
 }
 function toggleStage(h){
   h.parentElement.classList.toggle('collapsed');
+}
+function togglePerson(h){
+  h.parentElement.classList.toggle('collapsed');
+}
+function daysUntil(iso){
+  if(!iso)return null;
+  const t=new Date(iso+'T00:00:00');
+  const now=new Date(); now.setHours(0,0,0,0);
+  return Math.round((t-now)/86400000);
+}
+function applyPersonFilters(stage){
+  const pv=stage.dataset.person||"__all__";
+  const dv=stage.dataset.due||"__all__";
+  stage.querySelectorAll('.jo.jom:not(.colhead)').forEach(jo=>{
+    // respect parent/sub filter first
+    const isSub=jo.dataset.sub==="1";
+    let ok=(FILTER==="all")||(FILTER==="parent"&&!isSub)||(FILTER==="sub"&&isSub);
+    if(ok&&pv!=="__all__") ok=(jo.dataset.person===pv);
+    if(ok&&dv!=="__all__"){
+      const du=daysUntil(jo.dataset.due);
+      if(dv==="overdue") ok=(du!==null&&du<0);
+      else ok=(du!==null&&du>=0&&du<=parseInt(dv,10));
+    }
+    jo.style.display=ok?"":"none";
+  });
+  // hide empty person groups + update counts
+  const filtering=(pv!=="__all__")||(dv!=="__all__");
+  stage.querySelectorAll('.pgroup').forEach(g=>{
+    const vis=[...g.querySelectorAll('.jo.jom:not(.colhead)')].filter(j=>j.style.display!=="none").length;
+    const n=g.querySelector('.pgroup-n'); if(n)n.textContent=vis;
+    g.style.display=vis?"":"none";
+    // when a filter is active, auto-expand matching groups so results are visible;
+    // with no filter, leave groups collapsed (name list only)
+    if(filtering) g.classList.remove('collapsed');
+    else g.classList.add('collapsed');
+  });
+  const total=[...stage.querySelectorAll('.jo.jom:not(.colhead)')].filter(j=>j.style.display!=="none").length;
+  stage.querySelector('.stage-n').textContent=total;
+}
+function filterPerson(sel){
+  const stage=sel.closest('.stage');
+  stage.dataset.person=sel.value;
+  applyPersonFilters(stage);
+}
+function filterDue(sel){
+  const stage=sel.closest('.stage');
+  stage.dataset.due=sel.value;
+  applyPersonFilters(stage);
 }
 function setFilter(btn,e){
   const panel=btn.closest('.deptpanel');
