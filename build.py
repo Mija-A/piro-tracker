@@ -230,14 +230,20 @@ def render_stage_flat(stage, olist):
             f'<span class="stage-n">{len(olist)}</span></div>'
             f'<div class="stage-body">{bar}{items}</div></div>')
 
-def report_bar(stage, olist):
-    """A 'Create report' button carrying this stage's JO codes for export."""
+def report_bar(stage, olist, by_person=False):
+    """Report button(s) carrying this stage's JO codes for export.
+    When by_person, also emits the coral 'Generate employee-specific report' button."""
     codes=[o.get("code","") for o in olist if o.get("code")]
     codes_attr=html.escape(",".join(codes))
-    return (f'<div class="reportbar">'
-            f'<button class="reportbtn" data-stage="{html.escape(stage)}" '
-            f'data-codes="{codes_attr}" onclick="openReport(this)">'
-            f'Create customized report</button></div>')
+    green=(f'<button class="reportbtn" data-stage="{html.escape(stage)}" '
+           f'data-codes="{codes_attr}" onclick="openReport(this)">'
+           f'Generate customized service report</button>')
+    coral=""
+    if by_person:
+        coral=(f'<button class="reportbtn reportbtn-emp" data-stage="{html.escape(stage)}" '
+               f'data-codes="{codes_attr}" onclick="openEmployeeReport(this)">'
+               f'Generate employee-specific report</button>')
+    return f'<div class="reportbar">{green}{coral}</div>'
 
 def person_key(o):
     """Assigned worker name; blank -> 'Unassigned'."""
@@ -285,7 +291,7 @@ def render_stage_by_person(stage, olist):
               f'<option value="14">Next 14 days</option>'
               f'</select></label></div>')
 
-    inner=controls+report_bar(stage, olist)
+    inner=controls+report_bar(stage, olist, by_person=True)
     for name in people:
         gitems=sorted(buckets[name], key=due_sort_key)
         colhead=('<div class="jo jom colhead">'
@@ -345,17 +351,18 @@ PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 --accent:#3f7a52;--accent2:#4f9463;
 --serif:'Cormorant Garamond',Georgia,serif;--sans:'Inter',-apple-system,sans-serif;--mono:'SF Mono',ui-monospace,Menlo,monospace;}
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 44px;font-size:14px;}
+html{background:var(--bg);}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 44px;font-size:14px;max-width:1180px;margin:0 auto;}
 .top{display:flex;align-items:baseline;gap:18px;margin-bottom:6px;flex-wrap:wrap;}
 .title{font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:.01em;}
-.updated{margin-left:auto;font-size:11px;color:var(--ink3);letter-spacing:.03em;text-transform:uppercase;}
+.updated{margin-left:auto;font-size:11px;color:var(--ink);letter-spacing:.03em;text-transform:uppercase;}
 .rule{height:1px;background:var(--ink);opacity:.82;margin-bottom:26px;}
 .searchrow{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:26px;}
 .search{position:relative;flex:1;min-width:300px;max-width:420px;}
 .search input{width:100%;height:44px;border:1px solid var(--line2);border-radius:6px;padding:0 12px 0 38px;font-size:14.5px;background:var(--card);outline:none;font-family:var(--sans);}
 .search input:focus{border-color:var(--ink);}
 .search .ico{position:absolute;left:14px;top:13px;color:var(--ink3);font-size:15px;}
-.personview{display:none;max-width:940px;}
+.personview{display:none;max-width:1080px;margin:0 auto;}
 .personview.open{display:block;}
 .pv-back{background:none;border:none;font-family:var(--sans);font-size:12.5px;color:var(--ink2);cursor:pointer;padding:6px 0;margin-bottom:16px;}
 .pv-back:hover{color:var(--ink);}
@@ -373,18 +380,28 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pr-row .days.stuck{color:#8a5a30;font-weight:600;}
 .pr-none{padding:30px 8px;color:var(--ink2);font-size:15px;}
 /* report builder button - stands out */
-.reportbar{padding:10px 2px 16px;}
+.reportbar{padding:10px 2px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
 .reportbtn{font-family:var(--sans);font-size:13.5px;font-weight:600;color:#fff;
   background:linear-gradient(135deg,var(--accent2),var(--accent));border:none;border-radius:8px;
   padding:11px 20px;cursor:pointer;letter-spacing:.01em;
-  box-shadow:0 2px 8px rgba(138,90,48,.28);transition:transform .1s,box-shadow .12s;}
-.reportbtn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(138,90,48,.38);}
+  box-shadow:0 2px 8px rgba(63,122,82,.28);transition:transform .1s,box-shadow .12s;}
+.reportbtn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(63,122,82,.38);}
 .reportbtn:active{transform:translateY(0);}
+.reportbtn-emp{background:linear-gradient(135deg,#f0908f,#e2726f);
+  box-shadow:0 2px 8px rgba(226,114,111,.30);}
+.reportbtn-emp:hover{box-shadow:0 4px 14px rgba(226,114,111,.42);}
 .rpanel{background:var(--card);border-radius:10px;max-width:520px;width:100%;box-shadow:0 18px 55px rgba(0,0,0,.24);max-height:88vh;overflow-y:auto;}
 .rp-h{padding:24px 28px 8px;}
 .rp-title{font-family:var(--sans);font-size:20px;font-weight:600;color:var(--ink);}
 .rp-sub{font-size:13px;color:var(--ink2);margin-top:5px;}
 .rp-body{padding:16px 28px 8px;}
+.rp-empsel{width:100%;font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:7px;padding:10px 12px;cursor:pointer;outline:none;}
+.rp-empsel:focus{border-color:#e2726f;}
+.rp-export-emp{background:#e2726f;}
+.rp-export-emp:hover{background:#d65f5c;}
+/* employee-specific report: pink only on the employee dropdown */
+.rpanel.emp-mode .rp-empsel{background:#fbe4e4;border-color:#f0b8b6;color:#7a3b39;font-weight:600;}
+.rpanel.emp-mode .rp-empsel:focus{border-color:#e2726f;box-shadow:0 0 0 3px rgba(226,114,111,.18);}
 .rp-seclabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);font-weight:600;margin:6px 0 10px;}
 .rp-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;}
 .rp-col{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink);cursor:pointer;user-select:none;}
@@ -400,15 +417,15 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .rp-note{font-size:11.5px;color:var(--ink3);margin-top:10px;line-height:1.5;}
 .stats{display:flex;gap:46px;margin-bottom:30px;}
 .slab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);margin-bottom:5px;}
-.snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;}
+.snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;font-variant-numeric:lining-nums tabular-nums;font-feature-settings:"lnum" 1,"tnum" 1;}
 .snum.warn{color:#8a5a30;}
-.boxes{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;max-width:940px;}
-.box{border:1px solid var(--line2);border-radius:7px;padding:22px 24px 20px;cursor:pointer;font-family:var(--sans);text-align:left;background:var(--card);aspect-ratio:1.95/1;display:flex;flex-direction:column;transition:border-color .13s,background .13s;}
-.box:hover{border-color:var(--ink);}
-.bname{font-family:var(--serif);font-size:19px;font-weight:600;letter-spacing:.01em;margin-bottom:auto;color:var(--ink);}
-.bnum{font-size:33px;font-weight:600;letter-spacing:-.02em;line-height:1;}
-.bsub{font-size:12px;color:var(--ink2);margin-top:6px;}
-.deptpanel{display:none;max-width:940px;}
+.boxes{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1080px;margin:0 auto;}
+.box{border:1.5px solid var(--line2);border-radius:10px;padding:30px 30px 26px;cursor:pointer;font-family:var(--sans);text-align:left;background:var(--card);aspect-ratio:1.6/1;display:flex;flex-direction:column;transition:border-color .13s,background .13s,box-shadow .13s;}
+.box:hover{border-color:var(--ink);box-shadow:0 6px 20px rgba(0,0,0,.07);}
+.bname{font-family:var(--serif);font-size:24px;font-weight:600;letter-spacing:.01em;margin-bottom:auto;color:var(--ink);}
+.bnum{font-size:44px;font-weight:600;letter-spacing:-.02em;line-height:1;}
+.bsub{font-size:13.5px;color:var(--ink2);margin-top:8px;}
+.deptpanel{display:none;max-width:1080px;margin:0 auto;}
 .deptpanel.open{display:block;}
 .back{background:none;border:none;font-family:var(--sans);font-size:12.5px;color:var(--ink2);cursor:pointer;padding:6px 0;margin-bottom:16px;}
 .back:hover{color:var(--ink);}
@@ -416,13 +433,13 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .dp-name{font-family:var(--serif);font-size:24px;font-weight:600;}
 .dp-n{margin-left:auto;font-size:18px;font-weight:500;color:var(--ink2);}
 .stage{margin-top:14px;}
-.stage-h{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;padding:13px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--card);cursor:pointer;user-select:none;transition:border-color .12s;}
-.stage-h:hover{border-color:var(--ink2);}
-.stage-caret{font-size:10px;color:var(--ink3);transition:transform .14s;display:inline-block;}
+.stage-h{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.05em;padding:15px 14px;border:1.5px solid var(--ink);border-radius:8px;background:var(--card);cursor:pointer;user-select:none;transition:background .12s,border-color .12s;}
+.stage-h:hover{background:#f0ede6;}
+.stage-caret{font-size:11px;color:var(--ink);transition:transform .14s;display:inline-block;}
 .stage.collapsed .stage-caret{transform:rotate(0deg);}
 .stage:not(.collapsed) .stage-caret{transform:rotate(90deg);}
 .stage-name{flex:1;}
-.stage-n{color:var(--ink3);font-variant-numeric:tabular-nums;}
+.stage-n{color:var(--ink2);font-weight:700;font-variant-numeric:tabular-nums;}
 .stage-body{padding:6px 2px 4px;}
 .stage.collapsed .stage-body{display:none;}
 .jo{display:flex;align-items:baseline;gap:12px;font-size:16.5px;padding:12px 6px;border-bottom:1px solid var(--line);cursor:pointer;}
@@ -610,10 +627,11 @@ const REPORT_COLS=[
   ["address","Customer address",(c,d)=>d.address||""],
 ];
 const REPORT_DEFAULT=new Set(["image","jo","cust","service","assigned","metal","due","days"]);
-let REPORT_CODES=[], REPORT_STAGE="";
+let REPORT_CODES=[], REPORT_STAGE="", REPORT_EMP_MODE=false;
 function openReport(btn){
   REPORT_STAGE=btn.dataset.stage||"";
   REPORT_CODES=(btn.dataset.codes||"").split(",").filter(Boolean);
+  REPORT_EMP_MODE=false;
   const cols=REPORT_COLS.map(([k,label])=>{
     const on=REPORT_DEFAULT.has(k)?"checked":"";
     return '<label class="rp-col"><input type="checkbox" value="'+k+'" '+on+'>'+label+'</label>';
@@ -627,7 +645,64 @@ function openReport(btn){
     '<button class="rp-selall" onclick="toggleAllCols()">Select all / none</button>'+
     '<button class="rp-cancel" onclick="closeReport()">Cancel</button>'+
     '<button class="rp-export" id="rpExport" onclick="exportReport()">Download Excel</button></div>';
+  document.getElementById('rpanel').classList.remove('emp-mode');
   document.getElementById('ovr').classList.add('open');
+}
+function openEmployeeReport(btn){
+  REPORT_STAGE=btn.dataset.stage||"";
+  REPORT_CODES=(btn.dataset.codes||"").split(",").filter(Boolean);
+  REPORT_EMP_MODE=true;
+  const lockName=btn.dataset.lock||"";  // when set, dropdown is locked to this one person
+  // derive the employees present in this scope from the JO codes
+  const counts={};
+  REPORT_CODES.forEach(c=>{const d=DETAIL[c]; if(!d)return; const a=(d.assigned||'').trim()||'Unassigned'; counts[a]=(counts[a]||0)+1;});
+  const names=Object.keys(counts).sort((a,b)=> a==='Unassigned'?1:(b==='Unassigned'?-1:a.localeCompare(b)));
+  let opts='';
+  let subtitle;
+  if(lockName){
+    // locked to a single employee: no "All employees" option
+    opts='<option value="'+lockName.replace(/"/g,'&quot;')+'">'+lockName+' ('+REPORT_CODES.length+')</option>';
+    subtitle='Report for <strong>'+lockName+'</strong>. Choose columns below.';
+  }else{
+    opts='<option value="__all__">All employees</option>';
+    names.forEach(n=>{opts+='<option value="'+n.replace(/"/g,'&quot;')+'">'+n+' ('+counts[n]+')</option>';});
+    subtitle=REPORT_STAGE+'. Pick an employee, then choose columns.';
+  }
+  const cols=REPORT_COLS.map(([k,label])=>{
+    const on=REPORT_DEFAULT.has(k)?"checked":"";
+    return '<label class="rp-col"><input type="checkbox" value="'+k+'" '+on+'>'+label+'</label>';
+  }).join("");
+  const selDisabled=lockName?' disabled':'';
+  document.getElementById('rpanel').innerHTML=
+    '<div class="rp-h"><div class="rp-title">Generate employee-specific report</div>'+
+    '<div class="rp-sub">'+subtitle+'</div></div>'+
+    '<div class="rp-body">'+
+    '<div class="rp-seclabel">Employee</div>'+
+    '<select id="rpEmp" class="rp-empsel" onchange="updateEmpCount()"'+selDisabled+'>'+opts+'</select>'+
+    '<div class="rp-seclabel" style="margin-top:18px;">Columns</div>'+
+    '<div class="rp-cols">'+cols+'</div></div>'+
+    '<div class="rp-actions">'+
+    '<button class="rp-selall" onclick="toggleAllCols()">Select all / none</button>'+
+    '<button class="rp-cancel" onclick="closeReport()">Cancel</button>'+
+    '<button class="rp-export rp-export-emp" id="rpExport" onclick="exportReport()">Download Excel</button></div>';
+  document.getElementById('rpanel').classList.add('emp-mode');
+  document.getElementById('ovr').classList.add('open');
+  updateEmpCount();
+}
+function empSelected(){
+  const sel=document.getElementById('rpEmp');
+  return sel?sel.value:'__all__';
+}
+function scopedCodes(){
+  if(!REPORT_EMP_MODE) return REPORT_CODES;
+  const emp=empSelected();
+  if(emp==='__all__') return REPORT_CODES;
+  return REPORT_CODES.filter(c=>{const d=DETAIL[c]; if(!d)return false; const a=(d.assigned||'').trim()||'Unassigned'; return a===emp;});
+}
+function updateEmpCount(){
+  const btn=document.getElementById('rpExport');
+  const n=scopedCodes().length;
+  if(btn) btn.textContent='Download Excel'+(REPORT_EMP_MODE?' ('+n+')':'');
 }
 function toggleAllCols(){
   const boxes=[...document.querySelectorAll('#rpanel .rp-col input')];
@@ -657,14 +732,19 @@ async function fetchImageData(url){
 async function exportReport(){
   const chosen=[...document.querySelectorAll('#rpanel .rp-col input')].filter(b=>b.checked).map(b=>b.value);
   if(!chosen.length){alert('Pick at least one column.');return;}
+  const codes=scopedCodes();
+  if(!codes.length){alert('No orders for that employee.');return;}
+  const emp=REPORT_EMP_MODE?empSelected():'__all__';
   const colDefs=REPORT_COLS.filter(([k])=>chosen.includes(k));
   const wantImage=chosen.includes('image');
   const btn=document.getElementById('rpExport');
   btn.disabled=true; btn.textContent=wantImage?'Fetching images\u2026':'Building\u2026';
 
   const wb=new ExcelJS.Workbook();
-  const safe=REPORT_STAGE.replace(/[^A-Za-z0-9 ]/g,'').slice(0,28)||'Report';
-  const ws=wb.addWorksheet(safe);
+  let baseName=REPORT_STAGE;
+  if(REPORT_EMP_MODE && emp!=='__all__') baseName=emp+' - '+REPORT_STAGE;
+  const safe=baseName.replace(/[^A-Za-z0-9 ]/g,'').slice(0,28)||'Report';
+  const ws=wb.addWorksheet(safe.slice(0,28));
 
   // header row
   const header=colDefs.map(([k,label])=>label);
@@ -682,7 +762,7 @@ async function exportReport(){
 
   const IMG_W=90, ROW_H=70;
   let r=2;
-  for(const code of REPORT_CODES){
+  for(const code of codes){
     const d=DETAIL[code]; if(!d) continue;
     const rowVals=colDefs.map(([k,label,fn])=> k==='image' ? '' : fn(code,d));
     const row=ws.addRow(rowVals);
@@ -765,9 +845,10 @@ function renderPersonResults(name){
     body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+r;
   });
   const pcodes=items.map(it=>it.code).join(',');
-  const rbar='<div class="reportbar"><button class="reportbtn" data-stage="'+
-    name.replace(/"/g,'')+'" data-codes="'+pcodes+'" onclick="openReport(this)">'+
-    'Create customized report</button></div>';
+  const safeName=name.replace(/"/g,'&quot;');
+  const rbar='<div class="reportbar"><button class="reportbtn reportbtn-emp" data-stage="'+
+    safeName+'" data-codes="'+pcodes+'" data-lock="'+safeName+'" onclick="openEmployeeReport(this)">'+
+    'Generate employee-specific report</button></div>';
   view.innerHTML='<button class="pv-back" onclick="closePerson()">&#8592; Back</button>'+
     '<div class="pv-h"><div class="pv-name">'+name+'</div>'+
     '<div class="pv-sub">'+items.length+' active '+(items.length===1?'order':'orders')+
