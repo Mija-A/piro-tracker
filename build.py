@@ -341,7 +341,7 @@ def render_stage_by_metal(stage, olist):
 PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Production Tracker</title>
-<meta http-equiv="refresh" content="300">
+<meta http-equiv="refresh" content="120">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -524,19 +524,10 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="overlay" id="ovr" onclick="if(event.target===this)closeReport()"><div class="rpanel" id="rpanel"></div></div>
 <script>
 const DETAIL={{DETAIL}};
-// Auto-reload every 5 minutes with a cache-busting query string so the browser
-// fetches a fresh copy instead of serving the cached page (no manual Cmd+Shift+R).
+// Auto-reload the page every 2 minutes. Plain reload() works reliably for local
+// file:// pages (a query-string cache-buster does NOT work on file:// URLs).
 (function(){
-  var RELOAD_MS=5*60*1000;
-  setTimeout(function(){
-    try{
-      var u=new URL(window.location.href);
-      u.searchParams.set('v', Date.now());
-      window.location.replace(u.toString());
-    }catch(e){
-      window.location.reload();
-    }
-  }, RELOAD_MS);
+  setTimeout(function(){ window.location.reload(); }, 120000);
 })();
 function fmtET(utc){
   try{
