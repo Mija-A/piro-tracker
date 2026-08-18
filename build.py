@@ -3,13 +3,19 @@ build.py - reads orders.json + history.json, writes index.html.
 Clean serif/sans dashboard: outlined department boxes (grid) -> click opens a
 department's stages/orders -> click an order for image + journey card.
 Defaults to parents-only view (suborders are material sub-tasks; toggle to see them).
-Auto-reloads the page every 10 minutes (cache-busted). Run: python3 build.py
+
+STEP 1: Printing / Casting stages now group JOs by metal type, show colored
+metal pills, and list the due date (M/D) right in the dropdown. Other
+departments render exactly as before.
+
+Run: python3 build.py
 """
 import json, datetime, html, re
 from zoneinfo import ZoneInfo
 
 STALE_DAYS = 0
-SHOW_SUBORDERS = True
+SHOW_SUBORDERS = False
+DUE_FIELD = "dueDate"          # ISO timestamp on each order, e.g. 2026-10-01T00:00:00
 
 DEPARTMENTS = {
     "CAD": ["Design Queue","Designing","CAD Queue","CADing","CAD Approval","CAD Check",
@@ -23,6 +29,94 @@ DEPARTMENTS = {
     "Customer Service": ["SP Order Processing","SP Fulfillment queue","Invoice & Ship"],
 }
 DEPT_ORDER = ["CAD","Printing / Casting","Stones","Shop","Customer Service","Other"]
+
+# Departments that use the metal-grouped, DUE-column row treatment (Step 1)
+METAL_GROUPED_DEPTS = {"Printing / Casting"}
+
+# metal keyword -> (background, text) . Matched case-insensitively by "contains".
+# Order matters: more specific keys (18k white) before generic ones would collide,
+# but our tokens are already distinct, so simple contains-matching is fine.
+METAL_COLORS = {
+    "18k white":   ("#cfe0f2", "#1f3a5f"),  # blue
+    "14k white":   ("#d7ecd9", "#2f5133"),  # green
+    "18k yellow":  ("#f3c98b", "#5f3f16"),  # orange
+    "14k yellow":  ("#f6e7a8", "#5b4d17"),  # yellow
+    "18k rose":    ("#e6a9b4", "#5c2530"),  # darker pink
+    "14k rose":    ("#f3d0d8", "#6b3a44"),  # light pink
+    "platinum":    ("#d8d8d6", "#3a3a37"),  # grey
+    "silver":      ("#ececea", "#4a4a47"),  # lighter grey
+}
+METAL_FALLBACK = ("#e8e5df", "#5a554c")     # WAX / unknown -> neutral
+
+def metal_color(token):
+    t = (token or "").lower()
+    for key,(bg,fg) in METAL_COLORS.items():
+        if key in t:
+            return bg, fg
+    return METAL_FALLBACK
+
+def split_metals(s):
+    """Split a metals string on ; or , into cleaned tokens."""
+    return [t.strip() for t in re.split(r"[;,]", s or "") if t.strip()]
+
+def metal_group_key(s):
+    """Combined metal string used as the group label (blank -> 'No metal')."""
+    toks = split_metals(s)
+    return ", ".join(toks) if toks else "No metal"
+
+def metal_pill_html(s):
+    """One combined pill; each metal segment colored, sitting flush together."""
+    toks = split_metals(s)
+    if not toks:
+        return '<span class="mpill mpill-none">No metal</span>'
+    segs = ""
+    n = len(toks)
+    for i,t in enumerate(toks):
+        bg,fg = metal_color(t)
+        rl = "10px" if i==0 else "0"
+        rr = "10px" if i==n-1 else "0"
+        segs += (f'<span class="mseg" style="background:{bg};color:{fg};'
+                 f'border-top-left-radius:{rl};border-bottom-left-radius:{rl};'
+                 f'border-top-right-radius:{rr};border-bottom-right-radius:{rr};">'
+                 f'{html.escape(t)}</span>')
+    return f'<span class="mpill">{segs}</span>'
+
+def fmt_due(v):
+    """ISO timestamp -> 'M/D' (e.g. 8/10). Blank if missing/unparseable."""
+    if not v: return ""
+    s = str(v)
+    try:
+        d = datetime.datetime.fromisoformat(s.replace("Z","").split("T")[0])
+        return f"{d.month}/{d.day}"
+    except Exception:
+        m = re.match(r"(\d{4})-(\d{2})-(\d{2})", s)
+        if m:
+            return f"{int(m.group(2))}/{int(m.group(3))}"
+        return ""
+
+def due_sort_key(o):
+    """Sort earliest due first; missing dues go last."""
+    v = o.get(DUE_FIELD)
+    if not v: return (1, "")
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(v))
+    return (0, m.group(0)) if m else (1, "")
+
+# Fixed display order for single-metal groups. Combined/multi-metal groups sort
+# after all single metals; unknowns (e.g. WAX) sort last.
+METAL_ORDER = ["18k yellow","14k yellow","18k white","14k white",
+               "18k rose","14k rose","platinum","silver"]
+
+def metal_group_sort_key(gkey):
+    """Order groups: single metals by METAL_ORDER, then combos, then unknown."""
+    toks = split_metals(gkey)
+    single = len(toks) == 1
+    if single:
+        t = toks[0].lower()
+        for i,name in enumerate(METAL_ORDER):
+            if name in t:
+                return (0, i, gkey)
+        return (2, 0, gkey)          # single but unknown metal (e.g. WAX)
+    return (1, 0, gkey)              # multi-metal combo
 
 def dept_of(stage):
     s=(stage or "").strip()
@@ -63,7 +157,8 @@ def main():
         detail[c]={"cust":o.get("customerName") or "","stage":o.get("currentService") or "",
                    "days":o.get("daysInCurrentService"),"dept":dept_of(o.get("currentService","")),
                    "img":o.get("imageURL") or "","metal":o.get("metals") or "",
-                   "assigned":o.get("serviceAssignedUser") or "","journey":history.get(c,[])}
+                   "assigned":o.get("serviceAssignedUser") or "","journey":history.get(c,[]),
+                   "due":fmt_due(o.get(DUE_FIELD))}
 
     boxes_html=""; panels_html=""
     for d in DEPT_ORDER:
@@ -74,18 +169,25 @@ def main():
         dstuck=sum(1 for o in parent_rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
         did=d.replace(" ","").replace("/","")
         boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum">{dtotal}</div><div class="bsub">{dstuck} stuck</div></button>'
+
+        metal_mode = d in METAL_GROUPED_DEPTS
         stages_html=""
         for stage in sorted(grouped[d], key=lambda s:-len(grouped[d][s])):
-            olist=sorted(grouped[d][stage], key=lambda x:-(x.get("daysInCurrentService") or 0))
-            items=""
-            for o in olist:
-                dd=o.get("daysInCurrentService")
-                sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
-                c=html.escape(o.get("code",""))
-                sub=1 if is_sub(o.get("code","")) else 0
-                items+=f'<div class="jo{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')"><span class="code">{c}</span><span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span><span class="days">{dd if dd is not None else ""}d</span></div>'
-            stages_html+=f'<div class="stage"><div class="stage-h" onclick="toggleStage(this)"><span class="chev">&#9656;</span><span class="stage-name">{html.escape(stage)}</span><span class="stage-n">{len(olist)}</span></div><div class="stage-items collapsed">{items}</div></div>'
-        panels_html+=f'<div class="deptpanel" id="dept-{did}"><button class="back" onclick="closeDept()">&#8592; All departments</button><div class="dp-h"><span class="dp-name">{html.escape(d)}</span><span class="dp-n">{dtotal}</span></div><div class="controls"><div class="seg"><button data-f="all" onclick="setFilter(this,event)">All</button><button class="on" data-f="parent" onclick="setFilter(this,event)">Parents</button><button data-f="sub" onclick="setFilter(this,event)">Suborders</button></div></div>{stages_html}</div>'
+            olist=grouped[d][stage]
+            if metal_mode:
+                stages_html+=render_stage_by_metal(stage, olist)
+            else:
+                stages_html+=render_stage_flat(stage, olist)
+
+        cls = " metalgrp" if metal_mode else ""
+        panels_html+=(f'<div class="deptpanel{cls}" id="dept-{did}">'
+                      f'<button class="back" onclick="closeDept()">&#8592; All departments</button>'
+                      f'<div class="dp-h"><span class="dp-name">{html.escape(d)}</span><span class="dp-n">{dtotal}</span></div>'
+                      f'<div class="controls"><div class="seg">'
+                      f'<button data-f="all" onclick="setFilter(this,event)">All</button>'
+                      f'<button class="on" data-f="parent" onclick="setFilter(this,event)">Parents</button>'
+                      f'<button data-f="sub" onclick="setFilter(this,event)">Suborders</button>'
+                      f'</div></div>{stages_html}</div>')
 
     page=PAGE.replace("{{BOXES}}",boxes_html).replace("{{PANELS}}",panels_html).replace("{{NOW}}",now)\
              .replace("{{TOTAL}}",str(total)).replace("{{STUCK}}",str(stuck))\
@@ -93,12 +195,69 @@ def main():
     open("index.html","w").write(page)
     print(f"Built index.html ({total} parent orders shown, history on {len(history)} orders)")
 
+def jo_row_flat(o):
+    dd=o.get("daysInCurrentService")
+    sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
+    c=html.escape(o.get("code",""))
+    sub=1 if is_sub(o.get("code","")) else 0
+    return (f'<div class="jo{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')">'
+            f'<span class="code">{c}</span>'
+            f'<span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span>'
+            f'<span class="days">{dd if dd is not None else ""}d</span></div>')
+
+def jo_row_metal(o):
+    dd=o.get("daysInCurrentService")
+    sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
+    c=html.escape(o.get("code",""))
+    sub=1 if is_sub(o.get("code","")) else 0
+    due=fmt_due(o.get(DUE_FIELD))
+    return (f'<div class="jo jom{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')">'
+            f'<span class="code">{c}</span>'
+            f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
+            f'<span class="metalcell">{metal_pill_html(o.get("metals") or "")}</span>'
+            f'<span class="duecell">{due}</span>'
+            f'<span class="days">{dd if dd is not None else ""}d</span></div>')
+
+def render_stage_flat(stage, olist):
+    olist=sorted(olist, key=lambda x:-(x.get("daysInCurrentService") or 0))
+    items="".join(jo_row_flat(o) for o in olist)
+    return (f'<div class="stage collapsed"><div class="stage-h" onclick="toggleStage(this)">'
+            f'<span class="stage-caret">&#9656;</span>'
+            f'<span class="stage-name">{html.escape(stage)}</span>'
+            f'<span class="stage-n">{len(olist)}</span></div>'
+            f'<div class="stage-body">{items}</div></div>')
+
+def render_stage_by_metal(stage, olist):
+    # bucket by combined metal string
+    buckets={}
+    for o in olist:
+        buckets.setdefault(metal_group_key(o.get("metals") or ""), []).append(o)
+    # column labels row (once, at top of the stage body)
+    header=('<div class="jo jom colhead">'
+            '<span class="code">JO</span>'
+            '<span class="cust">Customer</span>'
+            '<span class="metalcell">Metal</span>'
+            '<span class="duecell">Due</span>'
+            '<span class="days">Days</span></div>')
+    inner=header
+    for gkey in sorted(buckets, key=metal_group_sort_key):
+        gitems=sorted(buckets[gkey], key=due_sort_key)
+        rows="".join(jo_row_metal(o) for o in gitems)
+        # no metal pill in the header — grouping is visible from the row pills;
+        # just a thin count divider between metal groups
+        inner+=(f'<div class="mgroup"><div class="mgroup-h">'
+                f'<span class="mgroup-n">{len(gitems)}</span></div>'
+                f'{rows}</div>')
+    return (f'<div class="stage collapsed"><div class="stage-h" onclick="toggleStage(this)">'
+            f'<span class="stage-caret">&#9656;</span>'
+            f'<span class="stage-name">{html.escape(stage)}</span>'
+            f'<span class="stage-n">{len(olist)}</span></div>'
+            f'<div class="stage-body">{inner}</div></div>')
+
 PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Production Tracker</title>
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
+<meta http-equiv="refresh" content="3600">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -137,21 +296,41 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .seg button{border:none;border-right:1px solid var(--line2);background:var(--card);font-family:var(--sans);font-size:12.5px;color:var(--ink2);padding:8px 16px;cursor:pointer;}
 .seg button:last-child{border-right:none;}
 .seg button.on{background:var(--ink);color:#fff;}
-.stage{margin-top:22px;}
-.stage-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;padding-bottom:5px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;}
-.stage-h:hover{color:var(--ink);}
-.chev{display:inline-block;font-size:9px;color:var(--ink3);transition:transform .15s ease;flex-shrink:0;}
-.stage-h.open .chev{transform:rotate(90deg);}
+.stage{margin-top:14px;}
+.stage-h{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;padding:11px 8px;border:1px solid var(--line2);border-radius:8px;background:var(--card);cursor:pointer;user-select:none;transition:border-color .12s;}
+.stage-h:hover{border-color:var(--ink2);}
+.stage-caret{font-size:10px;color:var(--ink3);transition:transform .14s;display:inline-block;}
+.stage.collapsed .stage-caret{transform:rotate(0deg);}
+.stage:not(.collapsed) .stage-caret{transform:rotate(90deg);}
 .stage-name{flex:1;}
-.stage-n{color:var(--ink3);}
-.stage-items{overflow:hidden;}
-.stage-items.collapsed{display:none;}
+.stage-n{color:var(--ink3);font-variant-numeric:tabular-nums;}
+.stage-body{padding:6px 2px 4px;}
+.stage.collapsed .stage-body{display:none;}
 .jo{display:flex;align-items:baseline;gap:12px;font-size:13.5px;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer;}
 .jo:hover{background:var(--card);}
 .jo .code{font-family:var(--mono);font-size:12px;min-width:150px;}
 .jo .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .jo .days{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:44px;text-align:right;}
 .jo.stuck .days{color:#8a5a30;font-weight:600;}
+
+/* ---- Step 1: metal-grouped Printing/Casting ---- */
+.mgroup{margin:2px 0 12px;padding:0 2px;}
+.mgroup-h{display:flex;align-items:center;padding:6px 2px 4px;}
+.mgroup-n{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--ink3);font-variant-numeric:tabular-nums;}
+.jo.jom{align-items:center;background:transparent;border-bottom:1px solid var(--line);}
+.jo.jom:last-child{border-bottom:none;}
+.jo.jom:hover{background:var(--card);}
+.jo.colhead{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);cursor:default;border-bottom:1px solid var(--line2);padding-bottom:8px;}
+.jo.colhead:hover{background:transparent;}
+.jo.colhead .code,.jo.colhead .cust,.jo.colhead .metalcell,.jo.colhead .duecell,.jo.colhead .days{color:var(--ink3);font-family:var(--sans);font-size:10px;}
+.jo.jom .code{min-width:120px;}
+.jo.jom .cust{flex:1;min-width:0;}
+.metalcell{flex-shrink:0;min-width:150px;}
+.duecell{flex-shrink:0;min-width:52px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:13px;}
+.mpill{display:inline-flex;overflow:hidden;border-radius:10px;font-size:11.5px;font-weight:600;line-height:1;white-space:nowrap;}
+.mseg{padding:5px 9px;}
+.mpill-none{background:#eceae5;color:var(--ink3);padding:5px 9px;font-weight:500;}
+
 .overlay{display:none;position:fixed;inset:0;background:rgba(30,28,24,.42);align-items:center;justify-content:center;padding:20px;z-index:50;}
 .overlay.open{display:flex;}
 .panel{background:var(--card);border-radius:10px;max-width:520px;width:100%;overflow:hidden;box-shadow:0 18px 55px rgba(0,0,0,.24);max-height:90vh;overflow-y:auto;}
@@ -191,11 +370,6 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <script>
 const DETAIL={{DETAIL}};
 let FILTER="parent";
-// Auto-reload every 10 minutes, cache-busted so it always fetches fresh data.
-setTimeout(function(){
-  var u=location.pathname+'?t='+Date.now();
-  location.replace(u);
-}, 600000);
 function fmtET(utc){
   try{
     const d=new Date(utc.replace(' ','T')+':00Z');
@@ -203,25 +377,23 @@ function fmtET(utc){
   }catch(e){return utc+' UTC';}
 }
 function applyFilterToPanel(panel){
-  panel.querySelectorAll('.jo').forEach(jo=>{
+  panel.querySelectorAll('.jo:not(.colhead)').forEach(jo=>{
     const isSub=jo.dataset.sub==="1";
     let show=(FILTER==="all")||(FILTER==="parent"&&!isSub)||(FILTER==="sub"&&isSub);
     jo.style.display=show?"":"none";
   });
+  // hide empty metal groups
+  panel.querySelectorAll('.mgroup').forEach(g=>{
+    const vis=[...g.querySelectorAll('.jo:not(.colhead)')].filter(j=>j.style.display!=="none").length;
+    const n=g.querySelector('.mgroup-n'); if(n)n.textContent=vis;
+    g.style.display=vis?"":"none";
+  });
   panel.querySelectorAll('.stage').forEach(st=>{
-    const vis=[...st.querySelectorAll('.jo')].filter(j=>j.style.display!=="none").length;
+    const vis=[...st.querySelectorAll('.jo:not(.colhead)')].filter(j=>j.style.display!=="none").length;
     st.querySelector('.stage-n').textContent=vis;
     st.style.display=vis?"":"none";
-  });
-}
-function toggleStage(h){
-  h.classList.toggle('open');
-  h.nextElementSibling.classList.toggle('collapsed');
-}
-function resetStages(panel){
-  panel.querySelectorAll('.stage-h').forEach(h=>{
-    h.classList.remove('open');
-    h.nextElementSibling.classList.add('collapsed');
+    // hide the column header if the stage has no visible rows
+    const ch=st.querySelector('.colhead'); if(ch)ch.style.display=vis?"":"none";
   });
 }
 function openDept(id){
@@ -229,11 +401,11 @@ function openDept(id){
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
   const panel=document.getElementById('dept-'+id);
   panel.classList.add('open');
+  panel.querySelectorAll('.stage').forEach(s=>s.classList.add('collapsed'));
   FILTER="parent";
   panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
   panel.querySelector('.seg button[data-f="parent"]').classList.add('on');
   applyFilterToPanel(panel);
-  resetStages(panel);
   window.scrollTo(0,0);
   history.pushState({view:'dept'},'');
 }
@@ -244,6 +416,9 @@ function closeDept(){
 function showBoxes(){
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
   document.getElementById('boxesWrap').style.display='';
+}
+function toggleStage(h){
+  h.parentElement.classList.toggle('collapsed');
 }
 function setFilter(btn,e){
   const panel=btn.closest('.deptpanel');
@@ -264,6 +439,7 @@ function showCard(code){
   const info='<div class="pinfo">'+
     '<div><div class="k">Current stage</div><div class="val">'+(d.stage||'\u2014')+'</div></div>'+
     '<div><div class="k">Days in stage</div><div class="val">'+days+'</div></div>'+
+    '<div><div class="k">Due date</div><div class="val">'+(d.due||'\u2014')+'</div></div>'+
     '<div><div class="k">Metal</div><div class="val">'+(d.metal||'\u2014')+'</div></div>'+
     '<div><div class="k">Assigned to</div><div class="val">'+(d.assigned||'\u2014')+'</div></div>'+
     '</div>';
