@@ -506,7 +506,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 </style></head><body>
 <div class="top">
   <div class="title">Production Tracker</div>
-  <div class="updated">Updated {{NOW}}</div>
+  <div class="updated">Updated {{NOW}} &middot; <span id="reloadCountdown">reload in 2:00</span></div>
 </div>
 <div class="rule"></div>
 <div class="searchrow">
@@ -524,10 +524,37 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="overlay" id="ovr" onclick="if(event.target===this)closeReport()"><div class="rpanel" id="rpanel"></div></div>
 <script>
 const DETAIL={{DETAIL}};
-// Auto-reload the page every 2 minutes. Plain reload() works reliably for local
-// file:// pages (a query-string cache-buster does NOT work on file:// URLs).
+// Robust auto-reload every 2 minutes. Uses wall-clock time (not a single
+// setTimeout, which browsers throttle/pause in background tabs) so it fires
+// reliably even if the tab has been inactive. Shows a live countdown so it's
+// obvious the timer is alive.
 (function(){
-  setTimeout(function(){ window.location.reload(); }, 120000);
+  var RELOAD_SECONDS=120;
+  var deadline=Date.now()+RELOAD_SECONDS*1000;
+  function fmt(sec){
+    if(sec<0)sec=0;
+    var m=Math.floor(sec/60), s=sec%60;
+    return m+':'+(s<10?'0':'')+s;
+  }
+  function paint(){
+    var left=Math.round((deadline-Date.now())/1000);
+    var el=document.getElementById('reloadCountdown');
+    if(el) el.textContent='reload in '+fmt(left);
+    if(Date.now()>=deadline){
+      window.location.reload();
+      return true;
+    }
+    return false;
+  }
+  // check every second (catches up if throttled) ...
+  setInterval(paint,1000);
+  // ... and re-check immediately whenever the tab becomes visible again,
+  // since background timers may have been paused.
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden) paint();
+  });
+  if(document.readyState!=='loading') paint();
+  else document.addEventListener('DOMContentLoaded',paint);
 })();
 function fmtET(utc){
   try{
