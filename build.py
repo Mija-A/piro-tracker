@@ -356,22 +356,24 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .search input{width:100%;height:44px;border:1px solid var(--line2);border-radius:6px;padding:0 12px 0 38px;font-size:14.5px;background:var(--card);outline:none;font-family:var(--sans);}
 .search input:focus{border-color:var(--ink);}
 .search .ico{position:absolute;left:14px;top:13px;color:var(--ink3);font-size:15px;}
-/* employee search results */
-.presults{background:var(--card);border-radius:10px;max-width:720px;width:100%;overflow:hidden;box-shadow:0 18px 55px rgba(0,0,0,.24);max-height:88vh;overflow-y:auto;}
-.presults-h{padding:22px 26px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);}
-.presults-name{font-family:var(--sans);font-size:22px;font-weight:600;color:var(--ink);}
-.presults-sub{font-size:13px;color:var(--ink2);margin-top:4px;}
-.presults-body{padding:8px 14px 18px;}
-.presults .pr-stage{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);padding:16px 8px 7px;border-bottom:1px solid var(--line);}
-.pr-row{display:flex;align-items:center;gap:12px;font-size:15.5px;padding:11px 8px;border-bottom:1px solid var(--line);cursor:pointer;}
-.pr-row:hover{background:var(--bg);}
-.pr-row .code{font-family:var(--mono);font-size:14px;min-width:150px;}
+/* employee search results (inline, full view) */
+.personview{display:none;max-width:940px;}
+.personview.open{display:block;}
+.pv-back{background:none;border:none;font-family:var(--sans);font-size:12.5px;color:var(--ink2);cursor:pointer;padding:6px 0;margin-bottom:16px;}
+.pv-back:hover{color:var(--ink);}
+.pv-h{padding-bottom:16px;border-bottom:1px solid var(--ink);margin-bottom:8px;}
+.pv-name{font-family:var(--sans);font-size:30px;font-weight:600;color:var(--ink);letter-spacing:.01em;}
+.pv-sub{font-size:14px;color:var(--ink2);margin-top:6px;}
+.pr-stage{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);padding:22px 8px 8px;border-bottom:1px solid var(--line);}
+.pr-row{display:flex;align-items:center;gap:12px;font-size:16.5px;padding:12px 8px;border-bottom:1px solid var(--line);cursor:pointer;}
+.pr-row:hover{background:var(--card);}
+.pr-row .code{font-family:var(--mono);font-size:15px;min-width:160px;}
 .pr-row .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
-.pr-row .metalcell{flex-shrink:0;min-width:140px;}
-.pr-row .duecell{flex-shrink:0;min-width:54px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:15px;}
+.pr-row .metalcell{flex-shrink:0;min-width:150px;}
+.pr-row .duecell{flex-shrink:0;min-width:56px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
 .pr-row .days{flex-shrink:0;min-width:46px;text-align:right;color:var(--ink3);font-variant-numeric:tabular-nums;}
 .pr-row .days.stuck{color:#8a5a30;font-weight:600;}
-.pr-none{padding:30px 26px;color:var(--ink2);font-size:14px;}
+.pr-none{padding:30px 8px;color:var(--ink2);font-size:15px;}
 .stats{display:flex;gap:46px;margin-bottom:30px;}
 .slab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);margin-bottom:5px;}
 .snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;}
@@ -474,7 +476,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 <div class="rule"></div>
 <div class="searchrow">
   <div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter" onkeydown="if(event.key==='Enter')doSearch()"></div>
-  <div class="search"><span class="ico">&#9787;</span><input id="qp" placeholder="Search an employee, then press Enter" onkeydown="if(event.key==='Enter')doPersonSearch()"></div>
+  <div class="search"><span class="ico">&#9906;</span><input id="qp" placeholder="Search an employee, then press Enter" onkeydown="if(event.key==='Enter')doPersonSearch()"></div>
 </div>
 <div class="stats">
   <div><div class="slab">In production</div><div class="snum">{{TOTAL}}</div></div>
@@ -482,8 +484,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 </div>
 <div id="boxesWrap"><div class="boxes">{{BOXES}}</div></div>
 {{PANELS}}
+<div id="personView" class="personview"></div>
 <div class="overlay" id="ov" onclick="if(event.target===this)closeCard()"><div class="panel" id="panel"></div></div>
-<div class="overlay" id="ovp" onclick="if(event.target===this)closePerson()"><div class="presults" id="presults"></div></div>
 <script>
 const DETAIL={{DETAIL}};
 let FILTER="parent";
@@ -517,6 +519,7 @@ function applyFilterToPanel(panel){
 }
 function openDept(id){
   document.getElementById('boxesWrap').style.display='none';
+  const pv=document.getElementById('personView'); if(pv)pv.classList.remove('open');
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
   const panel=document.getElementById('dept-'+id);
   panel.classList.add('open');
@@ -535,6 +538,7 @@ function closeDept(){
 }
 function showBoxes(){
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
+  const pv=document.getElementById('personView'); if(pv)pv.classList.remove('open');
   document.getElementById('boxesWrap').style.display='';
 }
 function toggleStage(h){
@@ -617,7 +621,6 @@ function showCard(code){
 function closeCard(){document.getElementById('ov').classList.remove('open');}
 window.addEventListener('popstate',function(){
   document.getElementById('ov').classList.remove('open');
-  document.getElementById('ovp').classList.remove('open');
   showBoxes();
 });
 function doSearch(){
@@ -642,11 +645,12 @@ function doPersonSearch(){
   renderPersonResults(target);
 }
 function renderPersonResults(name){
-  const box=document.getElementById('presults');
+  const view=document.getElementById('personView');
   if(!name){
-    box.innerHTML='<div class="presults-h"><div class="presults-name">No match</div></div>'+
+    view.innerHTML='<button class="pv-back" onclick="closePerson()">&#8592; Back</button>'+
+      '<div class="pv-h"><div class="pv-name">No match</div></div>'+
       '<div class="pr-none">No employee found by that name. Try a first or last name as it appears in the system.</div>';
-    document.getElementById('ovp').classList.add('open');
+    showPersonView();
     return;
   }
   // gather this person's active JOs
@@ -671,17 +675,26 @@ function renderPersonResults(name){
     });
     body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+r;
   });
-  box.innerHTML='<div class="presults-h"><div class="presults-name">'+name+'</div>'+
-    '<div class="presults-sub">'+items.length+' active '+(items.length===1?'order':'orders')+
-    ' across '+stages.length+' '+(stages.length===1?'stage':'stages')+'</div></div>'+
-    '<div class="presults-body">'+body+'</div>';
-  document.getElementById('ovp').classList.add('open');
+  view.innerHTML='<button class="pv-back" onclick="closePerson()">&#8592; Back</button>'+
+    '<div class="pv-h"><div class="pv-name">'+name+'</div>'+
+    '<div class="pv-sub">'+items.length+' active '+(items.length===1?'order':'orders')+
+    ' across '+stages.length+' '+(stages.length===1?'stage':'stages')+'</div></div>'+body;
+  showPersonView();
+}
+function showPersonView(){
+  document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
+  document.getElementById('boxesWrap').style.display='none';
+  document.getElementById('personView').classList.add('open');
+  window.scrollTo(0,0);
+  history.pushState({view:'person'},'');
 }
 function fromPerson(code){
-  document.getElementById('ovp').classList.remove('open');
   showCard(code);
 }
-function closePerson(){document.getElementById('ovp').classList.remove('open');}
+function closePerson(){
+  document.getElementById('personView').classList.remove('open');
+  showBoxes();
+}
 </script></body></html>"""
 
 if __name__=="__main__":
