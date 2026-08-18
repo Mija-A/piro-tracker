@@ -2,7 +2,7 @@
 build.py - reads orders.json + history.json, writes index.html.
 Clean serif/sans dashboard: outlined department boxes (grid) -> click opens a
 department's stages/orders -> click an order for image + journey card.
-Defaults to parents-only view (suborders are material sub-tasks; toggle to see them).
+Parents-only view (suborders removed).
 
 STEP 1: Printing / Casting stages now group JOs by metal type, show colored
 metal pills, and list the due date (M/D) right in the dropdown. Other
@@ -14,7 +14,6 @@ import json, datetime, html, re
 from zoneinfo import ZoneInfo
 
 STALE_DAYS = 0
-SHOW_SUBORDERS = False
 DUE_FIELD = "dueDate"          # ISO timestamp on each order, e.g. 2026-10-01T00:00:00
 
 DEPARTMENTS = {
@@ -38,8 +37,6 @@ METAL_GROUPED_DEPTS = {"Printing / Casting"}
 PERSON_GROUPED_SERVICES = {"Stone Setting", "Jewelry Cleaning", "CADing"}
 
 # metal keyword -> (background, text) . Matched case-insensitively by "contains".
-# Order matters: more specific keys (18k white) before generic ones would collide,
-# but our tokens are already distinct, so simple contains-matching is fine.
 METAL_COLORS = {
     "18k white":   ("#cfe0f2", "#1f3a5f"),  # blue
     "14k white":   ("#d7ecd9", "#2f5133"),  # green
@@ -105,8 +102,6 @@ def due_sort_key(o):
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", str(v))
     return (0, m.group(0)) if m else (1, "")
 
-# Fixed display order for single-metal groups. Combined/multi-metal groups sort
-# after all single metals; unknowns (e.g. WAX) sort last.
 METAL_ORDER = ["18k yellow","14k yellow","18k white","14k white",
                "18k rose","14k rose","platinum","silver"]
 
@@ -140,7 +135,7 @@ def main():
 
     rows=[]
     for o in orders:
-        if not SHOW_SUBORDERS and is_sub(o.get("code","")): continue
+        if is_sub(o.get("code","")): continue   # parents only
         d=o.get("daysInCurrentService")
         if STALE_DAYS and isinstance(d,int) and d>=STALE_DAYS: continue
         rows.append(o)
@@ -150,28 +145,34 @@ def main():
         stage=(o.get("currentService") or "(no stage)").strip()
         grouped.setdefault(dept_of(stage),{}).setdefault(stage,[]).append(o)
 
-    parent_rows_all=[o for o in rows if not is_sub(o.get("code",""))]
-    total=len(parent_rows_all)
-    stuck=sum(1 for o in parent_rows_all if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
+    total=len(rows)
+    stuck=sum(1 for o in rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
     now=datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%b %d, %Y  %I:%M %p")+" ET"
 
     detail={}
     for o in rows:
         c=o.get("code","")
+        items=o.get("items") or []
+        sku=", ".join(sorted({(it.get("itemSKU") or "") for it in items if it.get("itemSKU")}))
+        skutype=", ".join(sorted({(it.get("itemTypeSKU") or "") for it in items if it.get("itemTypeSKU")}))
         detail[c]={"cust":o.get("customerName") or "","stage":o.get("currentService") or "",
                    "days":o.get("daysInCurrentService"),"dept":dept_of(o.get("currentService","")),
                    "img":o.get("imageURL") or "","metal":o.get("metals") or "",
                    "assigned":o.get("serviceAssignedUser") or "","journey":history.get(c,[]),
                    "due":fmt_due(o.get(DUE_FIELD)),
-                   "pill":metal_pill_html(o.get("metals") or "")}
+                   "pill":metal_pill_html(o.get("metals") or ""),
+                   # extra fields for report export
+                   "dueISO":(str(o.get("dueDate") or "")[:10]),
+                   "status":o.get("status") or "","sku":sku,"skutype":skutype,
+                   "price":o.get("totalPrice") or "","orderDate":(str(o.get("orderDate") or "")[:10]),
+                   "address":o.get("customerMainAddress") or ""}
 
     boxes_html=""; panels_html=""
     for d in DEPT_ORDER:
         if d not in grouped: continue
         drows=[o for st in grouped[d].values() for o in st]
-        parent_rows=[o for o in drows if not is_sub(o.get("code",""))]
-        dtotal=len(parent_rows)
-        dstuck=sum(1 for o in parent_rows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
+        dtotal=len(drows)
+        dstuck=sum(1 for o in drows if isinstance(o.get("daysInCurrentService"),int) and o["daysInCurrentService"]>=13)
         did=d.replace(" ","").replace("/","")
         boxes_html+=f'<button class="box" onclick="openDept(\'{did}\')"><div class="bname">{html.escape(d)}</div><div class="bnum">{dtotal}</div><div class="bsub">{dstuck} stuck</div></button>'
 
@@ -190,11 +191,7 @@ def main():
         panels_html+=(f'<div class="deptpanel{cls}" id="dept-{did}">'
                       f'<button class="back" onclick="closeDept()">&#8592; All departments</button>'
                       f'<div class="dp-h"><span class="dp-name">{html.escape(d)}</span><span class="dp-n">{dtotal}</span></div>'
-                      f'<div class="controls"><div class="seg">'
-                      f'<button data-f="all" onclick="setFilter(this,event)">All</button>'
-                      f'<button class="on" data-f="parent" onclick="setFilter(this,event)">Parents</button>'
-                      f'<button data-f="sub" onclick="setFilter(this,event)">Suborders</button>'
-                      f'</div></div>{stages_html}</div>')
+                      f'{stages_html}</div>')
 
     page=PAGE.replace("{{BOXES}}",boxes_html).replace("{{PANELS}}",panels_html).replace("{{NOW}}",now)\
              .replace("{{TOTAL}}",str(total)).replace("{{STUCK}}",str(stuck))\
@@ -206,8 +203,7 @@ def jo_row_flat(o):
     dd=o.get("daysInCurrentService")
     sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
     c=html.escape(o.get("code",""))
-    sub=1 if is_sub(o.get("code","")) else 0
-    return (f'<div class="jo{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')">'
+    return (f'<div class="jo{sc}" onclick="showCard(\'{c}\')">'
             f'<span class="code">{c}</span>'
             f'<span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span>'
             f'<span class="days">{dd if dd is not None else ""}d</span></div>')
@@ -216,9 +212,8 @@ def jo_row_metal(o):
     dd=o.get("daysInCurrentService")
     sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
     c=html.escape(o.get("code",""))
-    sub=1 if is_sub(o.get("code","")) else 0
     due=fmt_due(o.get(DUE_FIELD))
-    return (f'<div class="jo jom{sc}" data-sub="{sub}" onclick="showCard(\'{c}\')">'
+    return (f'<div class="jo jom{sc}" onclick="showCard(\'{c}\')">'
             f'<span class="code">{c}</span>'
             f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
             f'<span class="metalcell">{metal_pill_html(o.get("metals") or "")}</span>'
@@ -228,11 +223,21 @@ def jo_row_metal(o):
 def render_stage_flat(stage, olist):
     olist=sorted(olist, key=lambda x:-(x.get("daysInCurrentService") or 0))
     items="".join(jo_row_flat(o) for o in olist)
+    bar=report_bar(stage, olist)
     return (f'<div class="stage collapsed"><div class="stage-h" onclick="toggleStage(this)">'
             f'<span class="stage-caret">&#9656;</span>'
             f'<span class="stage-name">{html.escape(stage)}</span>'
             f'<span class="stage-n">{len(olist)}</span></div>'
-            f'<div class="stage-body">{items}</div></div>')
+            f'<div class="stage-body">{bar}{items}</div></div>')
+
+def report_bar(stage, olist):
+    """A 'Create report' button carrying this stage's JO codes for export."""
+    codes=[o.get("code","") for o in olist if o.get("code")]
+    codes_attr=html.escape(",".join(codes))
+    return (f'<div class="reportbar">'
+            f'<button class="reportbtn" data-stage="{html.escape(stage)}" '
+            f'data-codes="{codes_attr}" onclick="openReport(this)">'
+            f'Create customized report</button></div>')
 
 def person_key(o):
     """Assigned worker name; blank -> 'Unassigned'."""
@@ -243,13 +248,12 @@ def jo_row_person(o):
     dd=o.get("daysInCurrentService")
     sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
     c=html.escape(o.get("code",""))
-    sub=1 if is_sub(o.get("code","")) else 0
     due=fmt_due(o.get(DUE_FIELD))
     who=html.escape(person_key(o))
     dv=o.get(DUE_FIELD) or ""
     m=re.match(r"(\d{4}-\d{2}-\d{2})", str(dv))
     diso=m.group(1) if m else ""
-    return (f'<div class="jo jom{sc}" data-sub="{sub}" data-person="{who}" '
+    return (f'<div class="jo jom{sc}" data-person="{who}" '
             f'data-due="{diso}" onclick="showCard(\'{c}\')">'
             f'<span class="code">{c}</span>'
             f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
@@ -258,17 +262,14 @@ def jo_row_person(o):
             f'<span class="days">{dd if dd is not None else ""}d</span></div>')
 
 def render_stage_by_person(stage, olist):
-    # bucket by assigned worker
     buckets={}
     for o in olist:
         buckets.setdefault(person_key(o), []).append(o)
-    # person order: alphabetical, Unassigned always last
     def psort(name): return (1,"") if name=="Unassigned" else (0,name.lower())
     people=sorted(buckets, key=psort)
 
-    sid=re.sub(r'[^A-Za-z0-9]','',stage)  # stable id for this stage's controls
+    sid=re.sub(r'[^A-Za-z0-9]','',stage)
 
-    # employee dropdown options
     opts='<option value="__all__">All employees</option>'
     for name in people:
         opts+=f'<option value="{html.escape(name)}">{html.escape(name)} ({len(buckets[name])})</option>'
@@ -284,15 +285,15 @@ def render_stage_by_person(stage, olist):
               f'<option value="14">Next 14 days</option>'
               f'</select></label></div>')
 
-    inner=controls
+    inner=controls+report_bar(stage, olist)
     for name in people:
         gitems=sorted(buckets[name], key=due_sort_key)
         colhead=('<div class="jo jom colhead">'
                  '<span class="code">JO</span>'
                  '<span class="cust">Customer</span>'
                  '<span class="metalcell">Metal</span>'
-                 '<span class="duecell">Due</span>'
-                 '<span class="days">Days</span></div>')
+                 '<span class="duecell">Due date</span>'
+                 '<span class="days">Days in service</span></div>')
         rows="".join(jo_row_person(o) for o in gitems)
         inner+=(f'<div class="pgroup collapsed" data-person="{html.escape(name)}">'
                 f'<div class="pgroup-h" onclick="togglePerson(this)">'
@@ -309,23 +310,19 @@ def render_stage_by_person(stage, olist):
             f'<div class="stage-body">{inner}</div></div>')
 
 def render_stage_by_metal(stage, olist):
-    # bucket by combined metal string
     buckets={}
     for o in olist:
         buckets.setdefault(metal_group_key(o.get("metals") or ""), []).append(o)
-    # column labels row (once, at top of the stage body)
     header=('<div class="jo jom colhead">'
             '<span class="code">JO</span>'
             '<span class="cust">Customer</span>'
             '<span class="metalcell">Metal</span>'
-            '<span class="duecell">Due</span>'
-            '<span class="days">Days</span></div>')
-    inner=header
+            '<span class="duecell">Due date</span>'
+            '<span class="days">Days in service</span></div>')
+    inner=report_bar(stage, olist)+header
     for gkey in sorted(buckets, key=metal_group_sort_key):
         gitems=sorted(buckets[gkey], key=due_sort_key)
         rows="".join(jo_row_metal(o) for o in gitems)
-        # no metal pill in the header — grouping is visible from the row pills;
-        # just a thin count divider between metal groups
         inner+=(f'<div class="mgroup"><div class="mgroup-h">'
                 f'<span class="mgroup-n">{len(gitems)}</span></div>'
                 f'{rows}</div>')
@@ -342,8 +339,10 @@ PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
 :root{--bg:#f6f5f1;--card:#fdfcfa;--ink:#2a2824;--ink2:#6f6a61;--ink3:#a29c90;--line:#e0dcd2;--line2:#c9c4b8;
+--accent:#3f7a52;--accent2:#4f9463;
 --serif:'Cormorant Garamond',Georgia,serif;--sans:'Inter',-apple-system,sans-serif;--mono:'SF Mono',ui-monospace,Menlo,monospace;}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 44px;font-size:14px;}
@@ -356,7 +355,6 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .search input{width:100%;height:44px;border:1px solid var(--line2);border-radius:6px;padding:0 12px 0 38px;font-size:14.5px;background:var(--card);outline:none;font-family:var(--sans);}
 .search input:focus{border-color:var(--ink);}
 .search .ico{position:absolute;left:14px;top:13px;color:var(--ink3);font-size:15px;}
-/* employee search results (inline, full view) */
 .personview{display:none;max-width:940px;}
 .personview.open{display:block;}
 .pv-back{background:none;border:none;font-family:var(--sans);font-size:12.5px;color:var(--ink2);cursor:pointer;padding:6px 0;margin-bottom:16px;}
@@ -370,10 +368,36 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pr-row .code{font-family:var(--mono);font-size:15px;min-width:160px;}
 .pr-row .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
 .pr-row .metalcell{flex-shrink:0;min-width:150px;}
-.pr-row .duecell{flex-shrink:0;min-width:56px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
+.pr-row .duecell{flex-shrink:0;min-width:70px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
 .pr-row .days{flex-shrink:0;min-width:46px;text-align:right;color:var(--ink3);font-variant-numeric:tabular-nums;}
 .pr-row .days.stuck{color:#8a5a30;font-weight:600;}
 .pr-none{padding:30px 8px;color:var(--ink2);font-size:15px;}
+/* report builder button - stands out */
+.reportbar{padding:10px 2px 16px;}
+.reportbtn{font-family:var(--sans);font-size:13.5px;font-weight:600;color:#fff;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));border:none;border-radius:8px;
+  padding:11px 20px;cursor:pointer;letter-spacing:.01em;
+  box-shadow:0 2px 8px rgba(138,90,48,.28);transition:transform .1s,box-shadow .12s;}
+.reportbtn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(138,90,48,.38);}
+.reportbtn:active{transform:translateY(0);}
+.rpanel{background:var(--card);border-radius:10px;max-width:520px;width:100%;box-shadow:0 18px 55px rgba(0,0,0,.24);max-height:88vh;overflow-y:auto;}
+.rp-h{padding:24px 28px 8px;}
+.rp-title{font-family:var(--sans);font-size:20px;font-weight:600;color:var(--ink);}
+.rp-sub{font-size:13px;color:var(--ink2);margin-top:5px;}
+.rp-body{padding:16px 28px 8px;}
+.rp-seclabel{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);font-weight:600;margin:6px 0 10px;}
+.rp-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;}
+.rp-col{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--ink);cursor:pointer;user-select:none;}
+.rp-col input{width:16px;height:16px;cursor:pointer;accent-color:var(--accent);}
+.rp-actions{display:flex;gap:10px;justify-content:flex-end;align-items:center;padding:18px 28px 24px;border-top:1px solid var(--line);margin-top:16px;}
+.rp-selall{margin-right:auto;font-size:12.5px;color:var(--ink2);cursor:pointer;background:none;border:none;font-family:var(--sans);text-decoration:underline;}
+.rp-selall:hover{color:var(--ink);}
+.rp-cancel{font-size:13px;color:var(--ink2);cursor:pointer;background:none;border:none;font-family:var(--sans);padding:10px 14px;}
+.rp-cancel:hover{color:var(--ink);}
+.rp-export{font-family:var(--sans);font-size:13.5px;font-weight:600;color:#fff;background:var(--accent);border:none;border-radius:7px;padding:11px 20px;cursor:pointer;}
+.rp-export:hover{background:var(--accent2);}
+.rp-export:disabled{opacity:.55;cursor:wait;}
+.rp-note{font-size:11.5px;color:var(--ink3);margin-top:10px;line-height:1.5;}
 .stats{display:flex;gap:46px;margin-bottom:30px;}
 .slab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);margin-bottom:5px;}
 .snum{font-family:var(--serif);font-size:30px;font-weight:600;line-height:1;}
@@ -391,11 +415,6 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .dp-h{display:flex;align-items:baseline;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--ink);margin-bottom:4px;}
 .dp-name{font-family:var(--serif);font-size:24px;font-weight:600;}
 .dp-n{margin-left:auto;font-size:18px;font-weight:500;color:var(--ink2);}
-.controls{margin:16px 0 4px;}
-.seg{display:inline-flex;border:1px solid var(--line2);border-radius:7px;overflow:hidden;}
-.seg button{border:none;border-right:1px solid var(--line2);background:var(--card);font-family:var(--sans);font-size:12.5px;color:var(--ink2);padding:8px 16px;cursor:pointer;}
-.seg button:last-child{border-right:none;}
-.seg button.on{background:var(--ink);color:#fff;}
 .stage{margin-top:14px;}
 .stage-h{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;padding:13px 10px;border:1px solid var(--line2);border-radius:8px;background:var(--card);cursor:pointer;user-select:none;transition:border-color .12s;}
 .stage-h:hover{border-color:var(--ink2);}
@@ -410,20 +429,17 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .jo:hover{background:var(--card);}
 .jo .code{font-family:var(--mono);font-size:15px;min-width:160px;}
 .jo .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.jo .days{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:44px;text-align:right;}
+.jo .days{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:90px;text-align:right;}
 .jo.stuck .days{color:#8a5a30;font-weight:600;}
-
-/* ---- Step 1: metal-grouped Printing/Casting ---- */
 .mgroup{margin:2px 0 12px;padding:0 2px;}
-.mgroup-h{display:flex;align-items:center;padding:6px 2px 4px;}
-.mgroup-n{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--ink3);font-variant-numeric:tabular-nums;}
+.mgroup-h{display:flex;align-items:center;padding:8px 2px 4px;}
+.mgroup-n{font-size:11px;font-weight:600;color:var(--ink2);font-variant-numeric:tabular-nums;background:var(--line);border-radius:20px;padding:2px 10px;min-width:24px;text-align:center;}
 .jo.jom{align-items:center;background:transparent;border-bottom:1px solid var(--line);}
 .jo.jom:last-child{border-bottom:none;}
 .jo.jom:hover{background:var(--card);}
 .jo.colhead{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);cursor:default;border-bottom:1px solid var(--line2);padding-bottom:8px;}
 .jo.colhead:hover{background:transparent;}
-.jo.colhead .code,.jo.colhead .cust,.jo.colhead .metalcell,.jo.colhead .duecell,.jo.colhead .days{color:var(--ink3);font-family:var(--sans);font-size:12px;}
-/* person-grouped services (Step 2) */
+.jo.colhead .code,.jo.colhead .cust,.jo.colhead .metalcell,.jo.colhead .duecell,.jo.colhead .days{color:var(--ink3);font-family:var(--sans);font-size:12px;white-space:nowrap;}
 .pfilters{display:flex;gap:16px;flex-wrap:wrap;padding:6px 2px 12px;}
 .pf{display:flex;align-items:center;gap:7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink3);font-weight:600;}
 .pf select{font-family:var(--sans);font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:6px;padding:6px 10px;cursor:pointer;outline:none;}
@@ -435,17 +451,16 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pgroup.collapsed .pgroup-caret{transform:rotate(0deg);}
 .pgroup:not(.collapsed) .pgroup-caret{transform:rotate(90deg);}
 .pgroup-name{font-size:17px;font-weight:600;color:var(--ink);font-family:var(--sans);letter-spacing:0;}
-.pgroup-n{margin-left:auto;font-size:10.5px;font-weight:600;color:var(--ink3);font-variant-numeric:tabular-nums;}
+.pgroup-n{margin-left:10px;font-size:11px;font-weight:600;color:var(--ink2);font-variant-numeric:tabular-nums;background:var(--line);border-radius:20px;padding:2px 10px;min-width:24px;text-align:center;}
 .pgroup-body{padding:2px 0 8px;}
 .pgroup.collapsed .pgroup-body{display:none;}
 .jo.jom .code{min-width:120px;}
 .jo.jom .cust{flex:1;min-width:0;}
 .metalcell{flex-shrink:0;min-width:150px;}
-.duecell{flex-shrink:0;min-width:56px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
+.duecell{flex-shrink:0;min-width:70px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
 .mpill{display:inline-flex;overflow:hidden;border-radius:11px;font-size:13.5px;font-weight:600;line-height:1;white-space:nowrap;}
 .mseg{padding:6px 11px;}
 .mpill-none{background:#eceae5;color:var(--ink3);padding:5px 9px;font-weight:500;}
-
 .overlay{display:none;position:fixed;inset:0;background:rgba(30,28,24,.42);align-items:center;justify-content:center;padding:20px;z-index:50;}
 .overlay.open{display:flex;}
 .panel{background:var(--card);border-radius:10px;max-width:520px;width:100%;overflow:hidden;box-shadow:0 18px 55px rgba(0,0,0,.24);max-height:90vh;overflow-y:auto;}
@@ -486,36 +501,14 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 {{PANELS}}
 <div id="personView" class="personview"></div>
 <div class="overlay" id="ov" onclick="if(event.target===this)closeCard()"><div class="panel" id="panel"></div></div>
+<div class="overlay" id="ovr" onclick="if(event.target===this)closeReport()"><div class="rpanel" id="rpanel"></div></div>
 <script>
 const DETAIL={{DETAIL}};
-let FILTER="parent";
 function fmtET(utc){
   try{
     const d=new Date(utc.replace(' ','T')+':00Z');
     return d.toLocaleString('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' ET';
   }catch(e){return utc+' UTC';}
-}
-function applyFilterToPanel(panel){
-  // person-grouped stages handle their own row visibility (person + due + parent/sub)
-  panel.querySelectorAll('.stage.personmode').forEach(st=>applyPersonFilters(st));
-  // everything else: plain parent/sub visibility
-  panel.querySelectorAll('.stage:not(.personmode) .jo:not(.colhead)').forEach(jo=>{
-    const isSub=jo.dataset.sub==="1";
-    let show=(FILTER==="all")||(FILTER==="parent"&&!isSub)||(FILTER==="sub"&&isSub);
-    jo.style.display=show?"":"none";
-  });
-  // hide empty metal groups
-  panel.querySelectorAll('.mgroup').forEach(g=>{
-    const vis=[...g.querySelectorAll('.jo:not(.colhead)')].filter(j=>j.style.display!=="none").length;
-    const n=g.querySelector('.mgroup-n'); if(n)n.textContent=vis;
-    g.style.display=vis?"":"none";
-  });
-  panel.querySelectorAll('.stage:not(.personmode)').forEach(st=>{
-    const vis=[...st.querySelectorAll('.jo:not(.colhead)')].filter(j=>j.style.display!=="none").length;
-    st.querySelector('.stage-n').textContent=vis;
-    st.style.display=vis?"":"none";
-    const ch=st.querySelector('.colhead'); if(ch)ch.style.display=vis?"":"none";
-  });
 }
 function openDept(id){
   document.getElementById('boxesWrap').style.display='none';
@@ -525,10 +518,6 @@ function openDept(id){
   panel.classList.add('open');
   panel.querySelectorAll('.stage').forEach(s=>s.classList.add('collapsed'));
   panel.querySelectorAll('.pgroup').forEach(g=>g.classList.add('collapsed'));
-  FILTER="parent";
-  panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
-  panel.querySelector('.seg button[data-f="parent"]').classList.add('on');
-  applyFilterToPanel(panel);
   window.scrollTo(0,0);
   history.pushState({view:'dept'},'');
 }
@@ -541,12 +530,8 @@ function showBoxes(){
   const pv=document.getElementById('personView'); if(pv)pv.classList.remove('open');
   document.getElementById('boxesWrap').style.display='';
 }
-function toggleStage(h){
-  h.parentElement.classList.toggle('collapsed');
-}
-function togglePerson(h){
-  h.parentElement.classList.toggle('collapsed');
-}
+function toggleStage(h){h.parentElement.classList.toggle('collapsed');}
+function togglePerson(h){h.parentElement.classList.toggle('collapsed');}
 function daysUntil(iso){
   if(!iso)return null;
   const t=new Date(iso+'T00:00:00');
@@ -557,10 +542,8 @@ function applyPersonFilters(stage){
   const pv=stage.dataset.person||"__all__";
   const dv=stage.dataset.due||"__all__";
   stage.querySelectorAll('.jo.jom:not(.colhead)').forEach(jo=>{
-    // respect parent/sub filter first
-    const isSub=jo.dataset.sub==="1";
-    let ok=(FILTER==="all")||(FILTER==="parent"&&!isSub)||(FILTER==="sub"&&isSub);
-    if(ok&&pv!=="__all__") ok=(jo.dataset.person===pv);
+    let ok=true;
+    if(pv!=="__all__") ok=(jo.dataset.person===pv);
     if(ok&&dv!=="__all__"){
       const du=daysUntil(jo.dataset.due);
       if(dv==="overdue") ok=(du!==null&&du<0);
@@ -568,36 +551,19 @@ function applyPersonFilters(stage){
     }
     jo.style.display=ok?"":"none";
   });
-  // hide empty person groups + update counts
   const filtering=(pv!=="__all__")||(dv!=="__all__");
   stage.querySelectorAll('.pgroup').forEach(g=>{
     const vis=[...g.querySelectorAll('.jo.jom:not(.colhead)')].filter(j=>j.style.display!=="none").length;
     const n=g.querySelector('.pgroup-n'); if(n)n.textContent=vis;
     g.style.display=vis?"":"none";
-    // when a filter is active, auto-expand matching groups so results are visible;
-    // with no filter, leave groups collapsed (name list only)
     if(filtering) g.classList.remove('collapsed');
     else g.classList.add('collapsed');
   });
   const total=[...stage.querySelectorAll('.jo.jom:not(.colhead)')].filter(j=>j.style.display!=="none").length;
   stage.querySelector('.stage-n').textContent=total;
 }
-function filterPerson(sel){
-  const stage=sel.closest('.stage');
-  stage.dataset.person=sel.value;
-  applyPersonFilters(stage);
-}
-function filterDue(sel){
-  const stage=sel.closest('.stage');
-  stage.dataset.due=sel.value;
-  applyPersonFilters(stage);
-}
-function setFilter(btn,e){
-  const panel=btn.closest('.deptpanel');
-  panel.querySelectorAll('.seg button').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on'); FILTER=btn.dataset.f;
-  applyFilterToPanel(panel);
-}
+function filterPerson(sel){const stage=sel.closest('.stage');stage.dataset.person=sel.value;applyPersonFilters(stage);}
+function filterDue(sel){const stage=sel.closest('.stage');stage.dataset.due=sel.value;applyPersonFilters(stage);}
 function showCard(code){
   const d=DETAIL[code];if(!d)return;
   let j='';
@@ -615,7 +581,8 @@ function showCard(code){
     '<div><div class="k">Metal</div><div class="val">'+(d.metal||'\u2014')+'</div></div>'+
     '<div><div class="k">Assigned to</div><div class="val">'+(d.assigned||'\u2014')+'</div></div>'+
     '</div>';
-  document.getElementById('panel').innerHTML=img+'<div class="pbody"><div class="pcode">'+code+'</div><div class="pcust">'+d.cust+'</div><div class="pdept">'+d.dept+'</div>'+info+'<div class="jhead">Journey</div>'+j+note+'<div class="pclose" onclick="closeCard()">Close</div></div>';
+  const cardReport='<div class="reportbar" style="padding:2px 0 18px;"><button class="reportbtn" data-stage="'+code+'" data-codes="'+code+'" onclick="openReport(this)">Create customized report</button></div>';
+  document.getElementById('panel').innerHTML=img+'<div class="pbody"><div class="pcode">'+code+'</div><div class="pcust">'+d.cust+'</div><div class="pdept">'+d.dept+'</div>'+cardReport+info+'<div class="jhead">Journey</div>'+j+note+'<div class="pclose" onclick="closeCard()">Close</div></div>';
   document.getElementById('ov').classList.add('open');
 }
 function closeCard(){document.getElementById('ov').classList.remove('open');}
@@ -623,6 +590,132 @@ window.addEventListener('popstate',function(){
   document.getElementById('ov').classList.remove('open');
   showBoxes();
 });
+// ---- Report builder ----
+// Non-image columns: [key,label,valueFn]. Image handled specially.
+const REPORT_COLS=[
+  ["image","Image",null],
+  ["jo","JO #",(c,d)=>c],
+  ["cust","Customer",(c,d)=>d.cust||""],
+  ["service","Service",(c,d)=>d.stage||""],
+  ["dept","Department",(c,d)=>d.dept||""],
+  ["assigned","Assigned to",(c,d)=>d.assigned||""],
+  ["metal","Metal",(c,d)=>d.metal||""],
+  ["due","Due date",(c,d)=>d.dueISO||""],
+  ["days","Days in service",(c,d)=>(d.days!=null?d.days:"")],
+  ["status","Status",(c,d)=>d.status||""],
+  ["sku","SKU",(c,d)=>d.sku||""],
+  ["skutype","SKU type",(c,d)=>d.skutype||""],
+  ["price","Total price",(c,d)=>d.price||""],
+  ["orderDate","Order date",(c,d)=>d.orderDate||""],
+  ["address","Customer address",(c,d)=>d.address||""],
+];
+const REPORT_DEFAULT=new Set(["image","jo","cust","service","assigned","metal","due","days"]);
+let REPORT_CODES=[], REPORT_STAGE="";
+function openReport(btn){
+  REPORT_STAGE=btn.dataset.stage||"";
+  REPORT_CODES=(btn.dataset.codes||"").split(",").filter(Boolean);
+  const cols=REPORT_COLS.map(([k,label])=>{
+    const on=REPORT_DEFAULT.has(k)?"checked":"";
+    return '<label class="rp-col"><input type="checkbox" value="'+k+'" '+on+'>'+label+'</label>';
+  }).join("");
+  document.getElementById('rpanel').innerHTML=
+    '<div class="rp-h"><div class="rp-title">Create customized report</div>'+
+    '<div class="rp-sub">'+REPORT_STAGE+' &middot; '+REPORT_CODES.length+' orders. Choose columns to include.</div></div>'+
+    '<div class="rp-body"><div class="rp-seclabel">Columns</div>'+
+    '<div class="rp-cols">'+cols+'</div></div>'+
+    '<div class="rp-actions">'+
+    '<button class="rp-selall" onclick="toggleAllCols()">Select all / none</button>'+
+    '<button class="rp-cancel" onclick="closeReport()">Cancel</button>'+
+    '<button class="rp-export" id="rpExport" onclick="exportReport()">Download Excel</button></div>';
+  document.getElementById('ovr').classList.add('open');
+}
+function toggleAllCols(){
+  const boxes=[...document.querySelectorAll('#rpanel .rp-col input')];
+  const anyOff=boxes.some(b=>!b.checked);
+  boxes.forEach(b=>b.checked=anyOff);
+}
+function closeReport(){document.getElementById('ovr').classList.remove('open');}
+
+// fetch an image URL -> {base64, ext} or null on failure (CORS / 404 / etc.)
+async function fetchImageData(url){
+  try{
+    const resp=await fetch(url,{mode:'cors'});
+    if(!resp.ok) return null;
+    const blob=await resp.blob();
+    let ext='png';
+    if(blob.type.includes('jpeg')||blob.type.includes('jpg')) ext='jpeg';
+    else if(blob.type.includes('png')) ext='png';
+    else if(blob.type.includes('gif')) ext='gif';
+    else return null; // exceljs supports png/jpeg/gif only
+    const buf=await blob.arrayBuffer();
+    let binary=''; const bytes=new Uint8Array(buf);
+    for(let i=0;i<bytes.length;i++) binary+=String.fromCharCode(bytes[i]);
+    return {base64:btoa(binary), ext};
+  }catch(e){ return null; }
+}
+
+async function exportReport(){
+  const chosen=[...document.querySelectorAll('#rpanel .rp-col input')].filter(b=>b.checked).map(b=>b.value);
+  if(!chosen.length){alert('Pick at least one column.');return;}
+  const colDefs=REPORT_COLS.filter(([k])=>chosen.includes(k));
+  const wantImage=chosen.includes('image');
+  const btn=document.getElementById('rpExport');
+  btn.disabled=true; btn.textContent=wantImage?'Fetching images\u2026':'Building\u2026';
+
+  const wb=new ExcelJS.Workbook();
+  const safe=REPORT_STAGE.replace(/[^A-Za-z0-9 ]/g,'').slice(0,28)||'Report';
+  const ws=wb.addWorksheet(safe);
+
+  // header row
+  const header=colDefs.map(([k,label])=>label);
+  ws.addRow(header);
+  const hRow=ws.getRow(1);
+  hRow.font={bold:true};
+  hRow.alignment={vertical:'middle'};
+
+  // column widths + record which column index is the image
+  let imageColIdx=-1;
+  ws.columns=colDefs.map(([k],i)=>{
+    if(k==='image'){imageColIdx=i;return {width:16};}
+    return {width: k==='address'?40:(k==='cust'?26:16)};
+  });
+
+  const IMG_W=90, ROW_H=70;
+  let r=2;
+  for(const code of REPORT_CODES){
+    const d=DETAIL[code]; if(!d) continue;
+    const rowVals=colDefs.map(([k,label,fn])=> k==='image' ? '' : fn(code,d));
+    const row=ws.addRow(rowVals);
+    row.alignment={vertical:'middle'};
+
+    if(wantImage && d.img){
+      const data=await fetchImageData(d.img);
+      if(data){
+        const imgId=wb.addImage({base64:'data:image/'+data.ext+';base64,'+data.base64, extension:data.ext});
+        row.height=ROW_H;
+        // place image in the image column (0-based col = imageColIdx), current row (0-based = r-1)
+        ws.addImage(imgId,{
+          tl:{col:imageColIdx+0.15, row:(r-1)+0.1},
+          ext:{width:IMG_W, height:ROW_H-8}
+        });
+        ws.getColumn(imageColIdx+1).width=IMG_W/7;
+      }
+    }
+    r++;
+  }
+
+  btn.textContent='Saving\u2026';
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const today=new Date().toISOString().slice(0,10);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=safe.replace(/ /g,'_')+'_'+today+'.xlsx';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  btn.disabled=false; btn.textContent='Download Excel';
+  closeReport();
+}
 function doSearch(){
   const q=document.getElementById('q').value.trim().toLowerCase();if(!q)return;
   const hit=Object.keys(DETAIL).find(c=>c.toLowerCase()===q)||Object.keys(DETAIL).find(c=>c.toLowerCase().includes(q));
@@ -632,11 +725,9 @@ function normName(s){return (s||'').trim().toLowerCase();}
 function doPersonSearch(){
   const q=normName(document.getElementById('qp').value);
   if(!q)return;
-  // collect all assigned names present in the data
   const names={};
   Object.values(DETAIL).forEach(d=>{const a=(d.assigned||'').trim(); if(a) names[a]=(names[a]||0)+1;});
   const allNames=Object.keys(names);
-  // exact match first, else the closest "contains" match by most orders
   let target=allNames.find(n=>normName(n)===q);
   if(!target){
     const partial=allNames.filter(n=>normName(n).includes(q)).sort((a,b)=>names[b]-names[a]);
@@ -653,10 +744,8 @@ function renderPersonResults(name){
     showPersonView();
     return;
   }
-  // gather this person's active JOs
   const items=Object.keys(DETAIL).filter(c=>(DETAIL[c].assigned||'').trim()===name)
     .map(c=>({code:c,...DETAIL[c]}));
-  // group by current stage, stages sorted by how many each holds
   const byStage={};
   items.forEach(it=>{const s=it.stage||'(no stage)'; (byStage[s]=byStage[s]||[]).push(it);});
   const stages=Object.keys(byStage).sort((a,b)=>byStage[b].length-byStage[a].length);
@@ -675,10 +764,14 @@ function renderPersonResults(name){
     });
     body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+r;
   });
+  const pcodes=items.map(it=>it.code).join(',');
+  const rbar='<div class="reportbar"><button class="reportbtn" data-stage="'+
+    name.replace(/"/g,'')+'" data-codes="'+pcodes+'" onclick="openReport(this)">'+
+    'Create customized report</button></div>';
   view.innerHTML='<button class="pv-back" onclick="closePerson()">&#8592; Back</button>'+
     '<div class="pv-h"><div class="pv-name">'+name+'</div>'+
     '<div class="pv-sub">'+items.length+' active '+(items.length===1?'order':'orders')+
-    ' across '+stages.length+' '+(stages.length===1?'stage':'stages')+'</div></div>'+body;
+    ' across '+stages.length+' '+(stages.length===1?'stage':'stages')+'</div></div>'+rbar+body;
   showPersonView();
 }
 function showPersonView(){
@@ -688,9 +781,7 @@ function showPersonView(){
   window.scrollTo(0,0);
   history.pushState({view:'person'},'');
 }
-function fromPerson(code){
-  showCard(code);
-}
+function fromPerson(code){showCard(code);}
 function closePerson(){
   document.getElementById('personView').classList.remove('open');
   showBoxes();
