@@ -381,6 +381,9 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pr-row .duecell{flex-shrink:0;min-width:70px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
 .pr-row .days{flex-shrink:0;min-width:46px;text-align:right;color:var(--ink3);font-variant-numeric:tabular-nums;}
 .pr-row .days.stuck{color:#8a5a30;font-weight:600;}
+.pr-row.colhead{cursor:default;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);border-bottom:1px solid var(--line2);}
+.pr-row.colhead:hover{background:transparent;}
+.pr-row.colhead .code,.pr-row.colhead .cust,.pr-row.colhead .metalcell,.pr-row.colhead .duecell,.pr-row.colhead .days{color:var(--ink3);font-family:var(--sans);font-size:12px;white-space:nowrap;}
 .pr-none{padding:30px 8px;color:var(--ink2);font-size:15px;}
 /* report builder button - stands out */
 .reportbar{padding:10px 2px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
@@ -864,6 +867,12 @@ function renderPersonResults(name){
   const byStage={};
   items.forEach(it=>{const s=it.stage||'(no stage)'; (byStage[s]=byStage[s]||[]).push(it);});
   const stages=Object.keys(byStage).sort((a,b)=>byStage[b].length-byStage[a].length);
+  const colhead='<div class="pr-row colhead">'+
+    '<span class="code">JO</span>'+
+    '<span class="cust">Customer</span>'+
+    '<span class="metalcell">Metal</span>'+
+    '<span class="duecell">Due date</span>'+
+    '<span class="days">Days in service</span></div>';
   let body='';
   stages.forEach(s=>{
     const rows=byStage[s].sort((a,b)=>(a.due||'').localeCompare(b.due||''));
@@ -877,7 +886,7 @@ function renderPersonResults(name){
          '<span class="duecell">'+(it.due||'')+'</span>'+
          '<span class="days'+stuck+'">'+(it.days!=null?it.days+'d':'')+'</span></div>';
     });
-    body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+r;
+    body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+colhead+r;
   });
   const pcodes=items.map(it=>it.code).join(',');
   const safeName=name.replace(/"/g,'&quot;');
