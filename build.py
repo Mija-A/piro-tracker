@@ -377,13 +377,10 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pr-row:hover{background:var(--card);}
 .pr-row .code{font-family:var(--mono);font-size:15px;min-width:160px;}
 .pr-row .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
-.pr-row .metalcell{flex-shrink:0;min-width:150px;display:flex;justify-content:center;align-items:center;}
-.pr-row .duecell{flex-shrink:0;min-width:90px;text-align:center;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
-.pr-row .days{flex-shrink:0;min-width:110px;text-align:center;color:var(--ink3);font-variant-numeric:tabular-nums;}
+.pr-row .metalcell{flex-shrink:0;min-width:150px;}
+.pr-row .duecell{flex-shrink:0;min-width:70px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
+.pr-row .days{flex-shrink:0;min-width:46px;text-align:right;color:var(--ink3);font-variant-numeric:tabular-nums;}
 .pr-row .days.stuck{color:#8a5a30;font-weight:600;}
-.pr-colhead{font-size:12px !important;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);cursor:default;padding-top:10px;padding-bottom:8px;}
-.pr-colhead:hover{background:transparent;}
-.pr-colhead .code,.pr-colhead .cust,.pr-colhead .metalcell,.pr-colhead .duecell,.pr-colhead .days{font-family:var(--sans) !important;font-size:12px !important;color:var(--ink3) !important;font-weight:600;white-space:nowrap;}
 .pr-none{padding:30px 8px;color:var(--ink2);font-size:15px;}
 /* report builder button - stands out */
 .reportbar{padding:10px 2px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
@@ -452,7 +449,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .jo:hover{background:var(--card);}
 .jo .code{font-family:var(--mono);font-size:15px;min-width:160px;}
 .jo .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.jo .days{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:110px;text-align:center;}
+.jo .days{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:90px;text-align:right;}
 .jo.stuck .days{color:#8a5a30;font-weight:600;}
 .mgroup{margin:2px 0 12px;padding:0 2px;}
 .mgroup-h{display:flex;align-items:center;padding:8px 2px 4px;}
@@ -479,9 +476,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .pgroup.collapsed .pgroup-body{display:none;}
 .jo.jom .code{min-width:120px;}
 .jo.jom .cust{flex:1;min-width:0;}
-.metalcell{flex-shrink:0;min-width:150px;display:flex;justify-content:center;align-items:center;}
-.metalcell .mpill{justify-content:center;}
-.duecell{flex-shrink:0;min-width:90px;text-align:center;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
+.metalcell{flex-shrink:0;min-width:150px;}
+.duecell{flex-shrink:0;min-width:70px;text-align:right;color:var(--ink2);font-variant-numeric:tabular-nums;font-size:16px;}
 .mpill{display:inline-flex;overflow:hidden;border-radius:11px;font-size:13.5px;font-weight:600;line-height:1;white-space:nowrap;}
 .mseg{padding:6px 11px;}
 .mpill-none{background:#eceae5;color:var(--ink3);padding:5px 9px;font-weight:500;}
@@ -868,12 +864,6 @@ function renderPersonResults(name){
   const byStage={};
   items.forEach(it=>{const s=it.stage||'(no stage)'; (byStage[s]=byStage[s]||[]).push(it);});
   const stages=Object.keys(byStage).sort((a,b)=>byStage[b].length-byStage[a].length);
-  const colhead='<div class="pr-row pr-colhead">'+
-    '<span class="code">JO</span>'+
-    '<span class="cust">Customer</span>'+
-    '<span class="metalcell">Metal</span>'+
-    '<span class="duecell">Due date</span>'+
-    '<span class="days">Days in service</span></div>';
   let body='';
   stages.forEach(s=>{
     const rows=byStage[s].sort((a,b)=>(a.due||'').localeCompare(b.due||''));
@@ -887,7 +877,7 @@ function renderPersonResults(name){
          '<span class="duecell">'+(it.due||'')+'</span>'+
          '<span class="days'+stuck+'">'+(it.days!=null?it.days+'d':'')+'</span></div>';
     });
-    body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+colhead+r;
+    body+='<div class="pr-stage">'+s+' &middot; '+byStage[s].length+'</div>'+r;
   });
   const pcodes=items.map(it=>it.code).join(',');
   const safeName=name.replace(/"/g,'&quot;');
