@@ -199,11 +199,20 @@ def main():
     open("index.html","w").write(page)
     print(f"Built index.html ({total} parent orders shown, history on {len(history)} orders)")
 
+def thumb_cell(o):
+    """Small image thumbnail for a JO row, with a 'no image' fallback box."""
+    url=(o.get("imageURL") or "").strip()
+    if url:
+        return (f'<span class="thumbcell"><img class="thumb" src="{html.escape(url)}" '
+                f'loading="lazy" onerror="this.parentElement.classList.add(\'noimg\');this.remove();"></span>')
+    return '<span class="thumbcell noimg"></span>'
+
 def jo_row_flat(o):
     dd=o.get("daysInCurrentService")
     sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
     c=html.escape(o.get("code",""))
     return (f'<div class="jo{sc}" onclick="showCard(\'{c}\')">'
+            f'{thumb_cell(o)}'
             f'<span class="code">{c}</span>'
             f'<span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span>'
             f'<span class="days">{dd if dd is not None else ""}d</span></div>')
@@ -214,6 +223,7 @@ def jo_row_metal(o):
     c=html.escape(o.get("code",""))
     due=fmt_due(o.get(DUE_FIELD))
     return (f'<div class="jo jom{sc}" onclick="showCard(\'{c}\')">'
+            f'{thumb_cell(o)}'
             f'<span class="code">{c}</span>'
             f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
             f'<span class="metalcell">{metal_pill_html(o.get("metals") or "")}</span>'
@@ -261,6 +271,7 @@ def jo_row_person(o):
     diso=m.group(1) if m else ""
     return (f'<div class="jo jom{sc}" data-person="{who}" '
             f'data-due="{diso}" onclick="showCard(\'{c}\')">'
+            f'{thumb_cell(o)}'
             f'<span class="code">{c}</span>'
             f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
             f'<span class="metalcell">{metal_pill_html(o.get("metals") or "")}</span>'
@@ -295,6 +306,7 @@ def render_stage_by_person(stage, olist):
     for name in people:
         gitems=sorted(buckets[name], key=due_sort_key)
         colhead=('<div class="jo jom colhead">'
+                 '<span class="thumbcell thumbhead">Image</span>'
                  '<span class="code">JO</span>'
                  '<span class="cust">Customer</span>'
                  '<span class="metalcell">Metal</span>'
@@ -320,6 +332,7 @@ def render_stage_by_metal(stage, olist):
     for o in olist:
         buckets.setdefault(metal_group_key(o.get("metals") or ""), []).append(o)
     header=('<div class="jo jom colhead">'
+            '<span class="thumbcell thumbhead">Image</span>'
             '<span class="code">JO</span>'
             '<span class="cust">Customer</span>'
             '<span class="metalcell">Metal</span>'
@@ -448,12 +461,19 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);padding:34px 
 .stage-n{color:var(--ink2);font-weight:700;font-variant-numeric:tabular-nums;}
 .stage-body{padding:6px 2px 4px;}
 .stage.collapsed .stage-body{display:none;}
-.jo{display:flex;align-items:baseline;gap:12px;font-size:16.5px;padding:12px 6px;border-bottom:1px solid var(--line);cursor:pointer;}
+.jo{display:flex;align-items:center;gap:12px;font-size:16.5px;padding:10px 6px;border-bottom:1px solid var(--line);cursor:pointer;}
 .jo:hover{background:var(--card);}
 .jo .code{font-family:var(--mono);font-size:15px;min-width:160px;}
 .jo .cust{flex:1;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .jo .days{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:90px;text-align:right;}
 .jo.stuck .days{color:#8a5a30;font-weight:600;}
+/* JO row thumbnails */
+.thumbcell{flex-shrink:0;width:44px;height:44px;border-radius:7px;overflow:hidden;background:#f1efe9;display:flex;align-items:center;justify-content:center;}
+.thumb{width:44px;height:44px;object-fit:cover;display:block;}
+.thumbcell.noimg{position:relative;}
+.thumbcell.noimg::after{content:"no image";font-family:var(--sans);font-size:8px;line-height:1.1;text-align:center;color:var(--ink3);padding:2px;}
+.thumbcell.thumbhead{background:transparent;font-family:var(--sans);font-size:12px;color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;width:44px;height:auto;border-radius:0;justify-content:flex-start;}
+.thumbcell.thumbhead::after{content:none;}
 .mgroup{margin:2px 0 12px;padding:0 2px;}
 .mgroup-h{display:flex;align-items:center;padding:8px 2px 4px;}
 .mgroup-n{font-size:11px;font-weight:600;color:var(--ink2);font-variant-numeric:tabular-nums;background:var(--line);border-radius:20px;padding:2px 10px;min-width:24px;text-align:center;}
@@ -544,6 +564,7 @@ const DETAIL={{DETAIL}};
     var el=document.getElementById('reloadCountdown');
     if(el) el.textContent='reload in '+fmt(left);
     if(Date.now()>=deadline){
+      saveViewState();       // remember where the user is before refreshing
       window.location.reload();
       return true;
     }
@@ -559,6 +580,36 @@ const DETAIL={{DETAIL}};
   if(document.readyState!=='loading') paint();
   else document.addEventListener('DOMContentLoaded',paint);
 })();
+// ---- View persistence across the 2-minute auto-reload ----
+// Records which view is open (a department panel or an employee) plus the
+// scroll position, so a refresh keeps the user exactly where they were
+// instead of dumping them back to the department grid.
+var CURRENT_VIEW={type:'home'};
+function saveViewState(){
+  try{
+    var st=Object.assign({}, CURRENT_VIEW, {scroll: window.scrollY||0});
+    sessionStorage.setItem('ptView', JSON.stringify(st));
+  }catch(e){}
+}
+function restoreViewState(){
+  var raw;
+  try{ raw=sessionStorage.getItem('ptView'); }catch(e){ return; }
+  if(!raw) return;
+  try{ sessionStorage.removeItem('ptView'); }catch(e){}
+  var st; try{ st=JSON.parse(raw); }catch(e){ return; }
+  if(!st||!st.type||st.type==='home') return;
+  if(st.type==='dept' && st.id){
+    var panel=document.getElementById('dept-'+st.id);
+    if(panel){
+      openDept(st.id);
+      if(st.scroll) window.scrollTo(0, st.scroll);
+    }
+  }else if(st.type==='person' && st.name){
+    renderPersonResults(st.name);
+    if(st.scroll) window.scrollTo(0, st.scroll);
+  }
+}
+window.addEventListener('load', restoreViewState);
 function fmtET(utc){
   try{
     const d=new Date(utc.replace(' ','T')+':00Z');
@@ -574,6 +625,7 @@ function openDept(id){
   panel.querySelectorAll('.stage').forEach(s=>s.classList.add('collapsed'));
   panel.querySelectorAll('.pgroup').forEach(g=>g.classList.add('collapsed'));
   window.scrollTo(0,0);
+  CURRENT_VIEW={type:'dept', id:id};
   history.pushState({view:'dept'},'');
 }
 function closeDept(){
@@ -584,6 +636,7 @@ function showBoxes(){
   document.querySelectorAll('.deptpanel').forEach(p=>p.classList.remove('open'));
   const pv=document.getElementById('personView'); if(pv)pv.classList.remove('open');
   document.getElementById('boxesWrap').style.display='';
+  CURRENT_VIEW={type:'home'};
 }
 function toggleStage(h){h.parentElement.classList.toggle('collapsed');}
 function togglePerson(h){h.parentElement.classList.toggle('collapsed');}
@@ -868,6 +921,7 @@ function renderPersonResults(name){
   items.forEach(it=>{const s=it.stage||'(no stage)'; (byStage[s]=byStage[s]||[]).push(it);});
   const stages=Object.keys(byStage).sort((a,b)=>byStage[b].length-byStage[a].length);
   const colhead='<div class="pr-row colhead">'+
+    '<span class="thumbcell thumbhead">Image</span>'+
     '<span class="code">JO</span>'+
     '<span class="cust">Customer</span>'+
     '<span class="metalcell">Metal</span>'+
@@ -879,7 +933,11 @@ function renderPersonResults(name){
     let r='';
     rows.forEach(it=>{
       const stuck=(typeof it.days==='number'&&it.days>=13)?' stuck':'';
+      const thumb=it.img
+        ? '<span class="thumbcell"><img class="thumb" src="'+it.img+'" loading="lazy" onerror="this.parentElement.classList.add(\'noimg\');this.remove();"></span>'
+        : '<span class="thumbcell noimg"></span>';
       r+='<div class="pr-row" onclick="fromPerson(\''+it.code+'\')">'+
+         thumb+
          '<span class="code">'+it.code+'</span>'+
          '<span class="cust">'+(it.cust||'')+'</span>'+
          '<span class="metalcell">'+(it.pill||'')+'</span>'+
@@ -897,6 +955,7 @@ function renderPersonResults(name){
     '<div class="pv-h"><div class="pv-name">'+name+'</div>'+
     '<div class="pv-sub">'+items.length+' active '+(items.length===1?'order':'orders')+
     ' across '+stages.length+' '+(stages.length===1?'stage':'stages')+'</div></div>'+rbar+body;
+  CURRENT_VIEW={type:'person', name:name};
   showPersonView();
 }
 function showPersonView(){
