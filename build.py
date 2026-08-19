@@ -211,10 +211,13 @@ def jo_row_flat(o):
     dd=o.get("daysInCurrentService")
     sc=" stuck" if isinstance(dd,int) and dd>=13 else ""
     c=html.escape(o.get("code",""))
-    return (f'<div class="jo{sc}" onclick="showCard(\'{c}\')">'
+    due=fmt_due(o.get(DUE_FIELD))
+    return (f'<div class="jo jom{sc}" onclick="showCard(\'{c}\')">'
             f'{thumb_cell(o)}'
             f'<span class="code">{c}</span>'
-            f'<span class="cust">{html.escape((o.get("customerName") or "")[:28])}</span>'
+            f'<span class="cust">{html.escape((o.get("customerName") or "")[:24])}</span>'
+            f'<span class="metalcell">{metal_pill_html(o.get("metals") or "")}</span>'
+            f'<span class="duecell">{due}</span>'
             f'<span class="days">{dd if dd is not None else ""}d</span></div>')
 
 def jo_row_metal(o):
@@ -232,13 +235,20 @@ def jo_row_metal(o):
 
 def render_stage_flat(stage, olist):
     olist=sorted(olist, key=lambda x:-(x.get("daysInCurrentService") or 0))
+    header=('<div class="jo jom colhead">'
+            '<span class="thumbcell thumbhead">Image</span>'
+            '<span class="code">JO</span>'
+            '<span class="cust">Customer</span>'
+            '<span class="metalcell">Metal</span>'
+            '<span class="duecell">Due date</span>'
+            '<span class="days">Days in service</span></div>')
     items="".join(jo_row_flat(o) for o in olist)
     bar=report_bar(stage, olist)
     return (f'<div class="stage collapsed"><div class="stage-h" onclick="toggleStage(this)">'
             f'<span class="stage-caret">&#9656;</span>'
             f'<span class="stage-name">{html.escape(stage)}</span>'
             f'<span class="stage-n">{len(olist)}</span></div>'
-            f'<div class="stage-body">{bar}{items}</div></div>')
+            f'<div class="stage-body">{bar}{header}{items}</div></div>')
 
 def report_bar(stage, olist, by_person=False):
     """Report button(s) carrying this stage's JO codes for export.
@@ -354,7 +364,8 @@ def render_stage_by_metal(stage, olist):
 PAGE=r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Production Tracker</title>
-<meta http-equiv="refresh" content="120">
+<!-- Auto-reload is handled by JS (saves current view first). No meta refresh,
+     which would hard-reload without preserving where the user is. -->
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
