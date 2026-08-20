@@ -1,2 +1,5 @@
 orders.json
+site/data.json
+history_archive.json
+__pycache__/
 .DS_Store

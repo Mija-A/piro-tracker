@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Production Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<div class="top">
+  <div class="title">Production Tracker</div>
+  <div class="updated">Updated <span id="updatedAt">&hellip;</span> &middot; <span id="reloadCountdown">refresh in --:--</span></div>
+</div>
+<div class="rule"></div>
+<div id="staleBanner" class="stalebanner" hidden></div>
+<div class="searchrow">
+  <div class="search"><span class="ico">&#9906;</span><input id="q" placeholder="Search a JO number, then press Enter"></div>
+  <div class="search"><span class="ico">&#9906;</span><input id="qp" placeholder="Search an employee, then press Enter"></div>
+</div>
+<div class="stats">
+  <div><div class="slab">In production</div><div class="snum" id="statTotal">&ndash;</div></div>
+  <div><div class="slab">Stuck <span id="statStuckLabel">13</span>+ days</div><div class="snum warn" id="statStuck">&ndash;</div></div>
+</div>
+<div id="boxesWrap"><div class="boxes" id="boxes"><div class="loadnote">Loading&hellip;</div></div></div>
+<div id="panels"></div>
+<div id="personView" class="personview"></div>
+<div class="overlay" id="ov"><div class="panel" id="panel"></div></div>
+<div class="overlay" id="ovr"><div class="rpanel" id="rpanel"></div></div>
+<script src="app.js"></script>
+</body></html>
