@@ -35,7 +35,9 @@ def main():
     history.archive(pruned)
     history.save(hist)
 
-    data = payload.build(orders, hist)
+    with open(os.path.join("site", "config.json"), encoding="utf-8") as cf:
+        _cfg = json.load(cf)
+    data = payload.build(orders, hist, suborder_stages=_cfg.get("suborderStages", []))
     os.makedirs(os.path.dirname(DATA_OUT), exist_ok=True)
     with open(DATA_OUT, "w", encoding="utf-8") as f:
         json.dump(data, f, sort_keys=True, separators=(",", ":"))

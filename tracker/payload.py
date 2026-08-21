@@ -34,16 +34,20 @@ def _order_row(o, journey):
     }
 
 
-def build(orders, hist, generated_at=None):
+def build(orders, hist, generated_at=None, suborder_stages=None):
     """Parents-only payload the page renders from. All grouping, department
     mapping, and formatting is client-side (driven by site/config.json)."""
     generated_at = generated_at or datetime.datetime.now(
         datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    suborder_stages = set(suborder_stages or [])
     tracked = hist.get("orders", {})
     rows = []
     for o in orders:
         code = o.get("code") or ""
-        if not code or is_sub(code):
+        if not code:
+            continue
+        stage = (o.get("currentService") or "").strip()
+        if is_sub(code) and stage not in suborder_stages:
             continue
         journey = tracked.get(code, {}).get("journey", [])
         rows.append(_order_row(o, journey))
