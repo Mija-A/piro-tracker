@@ -235,21 +235,17 @@ function renderStageByPerson(stage, olist) {
 
 // ---------- rendering: page ----------
 function renderAll() {
-  const rows = Object.values(DETAIL);
+  const inclSub = document.getElementById("inclSub");
+  const includeSub = !!(inclSub && inclSub.checked);
+  if (inclSub && !inclSub.dataset.wired) { inclSub.addEventListener("change", renderAll); inclSub.dataset.wired = "1"; }
+  const rows = Object.values(DETAIL).filter(o => includeSub || !isSubJO(o.code));
   const grouped = {};   // dept -> stage -> [orders]
   for (const o of rows) {
     const stage = (o.stage || "(no stage)").trim();
     ((grouped[o.dept] = grouped[o.dept] || {})[stage] = grouped[o.dept][stage] || []).push(o);
   }
 
-  const inclSub = document.getElementById("inclSub");
-  const paintTotal = () => {
-    const on = inclSub && inclSub.checked;
-    const n = on ? rows.length : rows.filter(o => !isSubJO(o.code)).length;
-    document.getElementById("statTotal").textContent = n;
-  };
-  if (inclSub && !inclSub.dataset.wired) { inclSub.addEventListener("change", paintTotal); inclSub.dataset.wired = "1"; }
-  paintTotal();
+  document.getElementById("statTotal").textContent = rows.length;
   document.getElementById("statStuck").textContent = rows.filter(o => isStuck(o.days)).length;
   document.getElementById("statStuckLabel").textContent = CONFIG.stuckDays;
 
