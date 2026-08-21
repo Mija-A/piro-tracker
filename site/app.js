@@ -237,7 +237,7 @@ function renderStageByPerson(stage, olist) {
 function renderAll() {
   const inclSub = document.getElementById("inclSub");
   const includeSub = !!(inclSub && inclSub.checked);
-  if (inclSub && !inclSub.dataset.wired) { inclSub.addEventListener("change", renderAll); inclSub.dataset.wired = "1"; }
+  if (inclSub && !inclSub.dataset.wired) { inclSub.addEventListener("change", () => { const _saved = captureViewState(); renderAll(); restoreViewState(_saved); }); inclSub.dataset.wired = "1"; }
   const rows = Object.values(DETAIL).filter(o => includeSub || !isSubJO(o.code));
   const grouped = {};   // dept -> stage -> [orders]
   for (const o of rows) {
