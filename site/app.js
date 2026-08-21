@@ -104,6 +104,7 @@ function daysUntil(iso) {
 }
 function dueSortKey(o) { return o.due ? [0, o.due] : [1, ""]; }
 function isStuck(days) { return typeof days === "number" && days >= CONFIG.stuckDays; }
+function isSubJO(code) { return /^JO-\d+-\d+/.test(code || ""); }
 function personKey(o) { return (o.assigned || "").trim() || "Unassigned"; }
 
 // ---------- data intake ----------
@@ -241,7 +242,14 @@ function renderAll() {
     ((grouped[o.dept] = grouped[o.dept] || {})[stage] = grouped[o.dept][stage] || []).push(o);
   }
 
-  document.getElementById("statTotal").textContent = rows.length;
+  const inclSub = document.getElementById("inclSub");
+  const paintTotal = () => {
+    const on = inclSub && inclSub.checked;
+    const n = on ? rows.length : rows.filter(o => !isSubJO(o.code)).length;
+    document.getElementById("statTotal").textContent = n;
+  };
+  if (inclSub && !inclSub.dataset.wired) { inclSub.addEventListener("change", paintTotal); inclSub.dataset.wired = "1"; }
+  paintTotal();
   document.getElementById("statStuck").textContent = rows.filter(o => isStuck(o.days)).length;
   document.getElementById("statStuckLabel").textContent = CONFIG.stuckDays;
 
